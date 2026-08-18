@@ -32,3 +32,4 @@ class Note(BaseModel):
     updated_at: str
     version: int
     deleted: bool = False
+    idempotency_key: str | None = None
