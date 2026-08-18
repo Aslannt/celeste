@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from app.config import Settings
@@ -30,6 +30,13 @@ class AssistantChatResponse(BaseModel):
     events: list[ToolEventResponse] = Field(default_factory=list)
 
 
+class PendingConfirmationResponse(BaseModel):
+    confirmation_id: str
+    tool: str
+    summary: str
+    created_at: float
+
+
 router = APIRouter(
     prefix="/api/v1/assistant",
     tags=["assistant"],
@@ -41,6 +48,23 @@ router = APIRouter(
 def list_assistant_tools() -> dict[str, list[dict[str, str]]]:
     router_service = ToolRouter(Settings.from_env())
     return {"tools": router_service.catalog()}
+
+
+@router.get("/confirmations", response_model=list[PendingConfirmationResponse])
+def list_pending_confirmations() -> list[PendingConfirmationResponse]:
+    router_service = ToolRouter(Settings.from_env())
+    return [
+        PendingConfirmationResponse.model_validate(item)
+        for item in router_service.pending_confirmations()
+    ]
+
+
+@router.get("/audit")
+def list_tool_audit(
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, list[dict[str, Any]]]:
+    router_service = ToolRouter(Settings.from_env())
+    return {"events": router_service.recent_audit(limit=limit)}
 
 
 @router.post("/chat", response_model=AssistantChatResponse)
@@ -63,6 +87,18 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
 def confirm_assistant_action(confirmation_id: str) -> ToolEventResponse:
     router_service = ToolRouter(Settings.from_env())
     result = router_service.confirm(confirmation_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Confirmation not found or expired",
+        )
+    return ToolEventResponse.model_validate(result.to_dict())
+
+
+@router.delete("/confirm/{confirmation_id}", response_model=ToolEventResponse)
+def cancel_assistant_action(confirmation_id: str) -> ToolEventResponse:
+    router_service = ToolRouter(Settings.from_env())
+    result = router_service.cancel(confirmation_id)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
