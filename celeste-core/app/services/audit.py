@@ -16,9 +16,10 @@ def _utc_now() -> str:
 class ToolAuditLog:
     """Local JSONL audit trail for Celeste tool decisions.
 
-    Arguments and tool outputs are intentionally not recorded here. Some tools may
-    later carry email bodies, private messages or other sensitive content; the
-    audit log records what capability ran and its outcome, not the private data.
+    Arguments, outputs and human-readable action summaries are intentionally not
+    recorded here. Future tools may carry note titles, email recipients/subjects,
+    message bodies or other sensitive content. The durable audit therefore keeps
+    only capability/risk/outcome metadata plus the opaque confirmation id.
     """
 
     def __init__(self, brain_dir: Path):
@@ -33,6 +34,8 @@ class ToolAuditLog:
         confirmation_id: str | None = None,
         summary: str | None = None,
     ) -> None:
+        # summary is accepted for caller compatibility but deliberately discarded.
+        _ = summary
         record: dict[str, Any] = {
             "time_utc": _utc_now(),
             "tool": tool,
@@ -41,8 +44,6 @@ class ToolAuditLog:
         }
         if confirmation_id:
             record["confirmation_id"] = confirmation_id
-        if summary:
-            record["summary"] = summary[:500]
 
         with _AUDIT_LOCK:
             self.path.parent.mkdir(parents=True, exist_ok=True)
