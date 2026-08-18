@@ -2,7 +2,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.config import Settings
 from app.main import app
+from app.services.tools import ToolRisk, ToolRouter, ToolSpec
 
 TOKEN = "assistant-test-token"
 HEADERS = {"X-Celeste-Token": TOKEN}
@@ -93,3 +95,28 @@ def test_local_assistant_reads_pc_status(tmp_path, monkeypatch):
     assert body["events"][0]["tool"] == "get_pc_status"
     assert body["events"][0]["status"] == "executed"
     assert body["events"][0]["output"]["version"] == "0.4.0"
+
+
+def test_confirm_tool_never_executes_before_confirmation(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    router = ToolRouter(Settings.from_env())
+    calls: list[str] = []
+    router.register(
+        ToolSpec(
+            name="test_sensitive_action",
+            description="Test-only confirmation action.",
+            risk=ToolRisk.CONFIRM,
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            handler=lambda _: calls.append("executed") or {"ok": True},
+        )
+    )
+
+    pending = router.execute("test_sensitive_action", {})
+    assert pending.status == "confirmation_required"
+    assert pending.confirmation_id is not None
+    assert calls == []
+
+    confirmed = router.confirm(pending.confirmation_id)
+    assert confirmed is not None
+    assert confirmed.status == "executed"
+    assert calls == ["executed"]
