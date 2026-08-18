@@ -3,6 +3,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models import NoteCreate
+from app.services.storage import MarkdownNoteStorage
 
 TOKEN = "test-token"
 HEADERS = {"X-Celeste-Token": TOKEN}
@@ -111,3 +113,86 @@ def test_reused_idempotency_key_with_different_payload_returns_conflict(tmp_path
     assert first.status_code == 201
     assert conflict.status_code == 409
     assert len(list((brain / "notes").glob("*.md"))) == 1
+
+
+def test_search_finds_title_content_and_tags(tmp_path, monkeypatch):
+    brain = _configure(tmp_path, monkeypatch)
+
+    with TestClient(app) as client:
+        client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Mantenimiento de la moto",
+                "content": "Cambiar aceite el sabado.",
+                "tags": ["vehiculo", "moto"],
+            },
+        )
+        client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Cita prenatal",
+                "content": "Control medico el viernes.",
+                "tags": ["familia"],
+            },
+        )
+
+        by_title = client.get("/api/v1/notes/search?q=moto", headers=HEADERS)
+        by_content = client.get("/api/v1/notes/search?q=aceite", headers=HEADERS)
+        by_tag = client.get("/api/v1/notes/search?q=familia", headers=HEADERS)
+
+    assert by_title.status_code == 200
+    assert [note["title"] for note in by_title.json()] == ["Mantenimiento de la moto"]
+    assert [note["title"] for note in by_content.json()] == ["Mantenimiento de la moto"]
+    assert [note["title"] for note in by_tag.json()] == ["Cita prenatal"]
+    assert (brain / ".celeste" / "brain-index.sqlite3").exists()
+
+
+def test_search_index_tracks_update_and_delete(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={"title": "Compra", "content": "Comprar cafe"},
+        ).json()
+        note_id = created["id"]
+
+        assert len(client.get("/api/v1/notes/search?q=cafe", headers=HEADERS).json()) == 1
+
+        client.put(
+            f"/api/v1/notes/{note_id}",
+            headers=HEADERS,
+            json={"content": "Comprar chocolate"},
+        )
+        assert client.get("/api/v1/notes/search?q=cafe", headers=HEADERS).json() == []
+        assert len(client.get("/api/v1/notes/search?q=chocolate", headers=HEADERS).json()) == 1
+
+        client.delete(f"/api/v1/notes/{note_id}", headers=HEADERS)
+        assert client.get("/api/v1/notes/search?q=chocolate", headers=HEADERS).json() == []
+
+
+def test_rebuild_recovers_markdown_created_outside_api(tmp_path, monkeypatch):
+    brain = _configure(tmp_path, monkeypatch)
+
+    with TestClient(app) as client:
+        storage = MarkdownNoteStorage(brain)
+        storage.create(
+            NoteCreate(
+                title="Nota editada fuera del API",
+                content="La palabra reconstruible solo existe en Markdown.",
+                tags=["manual"],
+            )
+        )
+
+        before = client.get("/api/v1/notes/search?q=reconstruible", headers=HEADERS)
+        rebuilt = client.post("/api/v1/notes/index/rebuild", headers=HEADERS)
+        after = client.get("/api/v1/notes/search?q=reconstruible", headers=HEADERS)
+
+    assert before.status_code == 200
+    assert before.json() == []
+    assert rebuilt.status_code == 200
+    assert rebuilt.json() == {"indexed": 1}
+    assert [note["title"] for note in after.json()] == ["Nota editada fuera del API"]

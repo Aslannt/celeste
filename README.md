@@ -1,25 +1,39 @@
 # Celeste
 
-Celeste es un asistente personal distribuido en construccion. Esta primera version se concentra en una base pequena y comprobable: **Celeste Core** en el PC y almacenamiento de notas Markdown abierto.
+Celeste es un asistente personal distribuido en construccion. La arquitectura actual usa **Celeste Core** en el PC, **Celeste Android** como cliente y **Celeste Brain** como memoria abierta basada en Markdown.
 
 ## Estado actual
 
-- Wake-on-LAN del PC: probado correctamente desde Android.
-- Celeste Core: FastAPI en Windows/Fedora.
-- Celeste Brain: notas Markdown con YAML frontmatter.
-- Android propio: siguiente paso.
-- IA, voz, Home Assistant y servidor 24/7: deliberadamente fuera de esta version.
+- Wake-on-LAN desde Celeste Android.
+- Celeste Core con FastAPI en Windows/Fedora.
+- Autoarranque de Core en Windows al iniciar sesion.
+- Token local privado para la API.
+- Celeste Brain con notas Markdown + YAML frontmatter.
+- Notas offline en Android con Room y sincronizacion idempotente.
+- V0.3: indice SQLite + FTS5 reconstruible y busqueda desde Android.
+- IA, voz, Home Assistant y servidor 24/7 siguen fuera del alcance actual.
+
+## Principio de Celeste Brain
+
+Los archivos Markdown son la fuente de verdad. El indice SQLite vive en:
+
+```text
+CelesteBrain/.celeste/brain-index.sqlite3
+```
+
+Ese archivo es cache reconstruible: puede borrarse y Celeste Core lo vuelve a generar desde `CelesteBrain/notes` al arrancar.
 
 ## Estructura
 
 ```text
 celeste/
-├── celeste-core/       # API local del PC
-├── docs/               # decisiones y roadmap
-└── CelesteBrain/       # se crea al ejecutar; datos personales, no se versiona
+├── celeste-core/       # API local, Brain index y servicios
+├── celeste-android/    # cliente Android, WOL y memoria offline
+├── docs/               # decisiones, arquitectura y roadmap
+└── CelesteBrain/       # datos personales; no se versiona
 ```
 
-## Arranque rapido en Windows
+## Arranque en Windows
 
 Necesitas Python 3.12 o superior.
 
@@ -28,42 +42,20 @@ cd celeste-core
 .\run_windows.ps1
 ```
 
-Al iniciar, abre:
-
-- API: `http://127.0.0.1:8000/api/v1/status`
-- Swagger: `http://127.0.0.1:8000/docs`
-
-Para acceder desde el celular en la misma red usa la IP LAN del PC, por ejemplo:
+Servicios locales principales:
 
 ```text
-http://<IP_LAN_DEL_PC>:8000/api/v1/status
+GET  /api/v1/status
+GET  /api/v1/notes
+POST /api/v1/notes
+GET  /api/v1/notes/search?q=<texto>
+POST /api/v1/notes/index/rebuild
 ```
 
-> Usa la IP privada actual de tu PC. No guardamos una IP domestica concreta en el repositorio. Mas adelante Celeste descubrira el Core automaticamente.
+Swagger esta disponible en `http://127.0.0.1:8000/docs`.
 
-## Token local
+Las operaciones de notas requieren `X-Celeste-Token`. Usa `configure_local_security.ps1` para crear la configuracion privada local en `.env`; no subas ese archivo al repositorio.
 
-Las operaciones sobre notas requieren el header:
+## Siguiente etapa
 
-```text
-X-Celeste-Token: celeste-local-dev
-```
-
-Ese valor es solo para desarrollo. Antes de permitir acceso remoto debe cambiarse por un secreto real.
-
-Puedes definir otro token antes de iniciar:
-
-```powershell
-$env:CELESTE_API_TOKEN="pon-aqui-un-token-largo"
-.\run_windows.ps1
-```
-
-## Primer objetivo de prueba
-
-1. Levantar Celeste Core.
-2. Abrir `/api/v1/status` desde el PC.
-3. Abrir el mismo endpoint desde Android usando la IP LAN del PC.
-4. Crear una nota desde Swagger.
-5. Confirmar que aparece como `.md` dentro de `CelesteBrain/notes/`.
-
-Una vez eso funcione, el siguiente incremento sera `celeste-android`: boton de Wake-on-LAN + captura de notas offline.
+Despues de validar V0.3 en el PC y telefono reales, el siguiente bloque es la abstraccion de proveedores de IA y el Tool Router. La busqueda lexical FTS5 sera la primera implementacion de `search_memory`; embeddings/RAG se evaluaran mas adelante y no reemplazaran Markdown como fuente de verdad.

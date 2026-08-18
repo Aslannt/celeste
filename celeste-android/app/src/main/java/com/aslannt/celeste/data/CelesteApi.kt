@@ -6,6 +6,8 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 class CelesteApi(private val config: CelesteConfig) {
 
@@ -24,8 +26,17 @@ class CelesteApi(private val config: CelesteConfig) {
 
     fun listNotes(): List<Note> {
         val text = requestText("/api/v1/notes", "GET", authenticated = true)
-        val array = JSONArray(text)
-        return (0 until array.length()).map { index -> parseNote(array.getJSONObject(index)) }
+        return parseNotes(text)
+    }
+
+    fun searchNotes(query: String, limit: Int = 20): List<Note> {
+        val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.toString())
+        val text = requestText(
+            "/api/v1/notes/search?q=$encoded&limit=$limit",
+            "GET",
+            authenticated = true,
+        )
+        return parseNotes(text)
     }
 
     fun createNote(
@@ -93,6 +104,11 @@ class CelesteApi(private val config: CelesteConfig) {
             throw IllegalStateException("Celeste Core respondio HTTP $status: $text")
         }
         return text
+    }
+
+    private fun parseNotes(text: String): List<Note> {
+        val array = JSONArray(text)
+        return (0 until array.length()).map { index -> parseNote(array.getJSONObject(index)) }
     }
 
     private fun parseNote(json: JSONObject): Note {

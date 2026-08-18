@@ -7,12 +7,22 @@ from fastapi import FastAPI
 from app.api.notes import router as notes_router
 from app.api.status import router as status_router
 from app.config import Settings
+from app.services.index import BrainIndex, BrainIndexError
+from app.services.storage import MarkdownNoteStorage
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = Settings.from_env()
-    (settings.brain_dir / "notes").mkdir(parents=True, exist_ok=True)
+    storage = MarkdownNoteStorage(settings.brain_dir)
+
+    try:
+        indexed = BrainIndex(settings.brain_dir).rebuild(storage.list(include_deleted=False))
+        print(f"[Celeste] Brain index ready: {indexed} note(s) indexed.")
+    except BrainIndexError as exc:
+        # Search may be unavailable, but Markdown note storage must remain usable.
+        print(f"[Celeste] WARNING: Brain index unavailable: {exc}")
+
     if settings.api_token == "celeste-local-dev":
         print("[Celeste] WARNING: using development API token. LAN testing only.")
     yield
@@ -20,7 +30,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Celeste Core",
-    version="0.1.0",
+    version="0.3.0",
     description="Local core service for the Celeste personal assistant.",
     lifespan=lifespan,
 )
