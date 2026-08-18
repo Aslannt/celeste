@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import re
+import threading
+import time
+from email import policy
 from email.message import EmailMessage
+from email.parser import BytesParser
 from email.utils import parseaddr
 from html.parser import HTMLParser
 from pathlib import Path
@@ -13,6 +18,10 @@ GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.compose",
 ]
+
+_PREPARED_DRAFT_LOCK = threading.RLock()
+_PREPARED_DRAFT_TTL_SECONDS = 900
+_PREPARED_DRAFTS: dict[str, tuple[str, float]] = {}
 
 
 class GmailError(ValueError):
@@ -37,15 +46,18 @@ class _HTMLTextExtractor(HTMLParser):
         return "\n".join(self.parts)
 
 
-def _decode_base64url(value: str) -> str:
+def _decode_base64url_bytes(value: str) -> bytes:
     if not value:
-        return ""
+        return b""
     padding = "=" * (-len(value) % 4)
     try:
-        raw = base64.urlsafe_b64decode((value + padding).encode("ascii"))
+        return base64.urlsafe_b64decode((value + padding).encode("ascii"))
     except (ValueError, UnicodeEncodeError) as exc:
         raise GmailError("Gmail returned invalid base64url message data") from exc
-    return raw.decode("utf-8", errors="replace")
+
+
+def _decode_base64url(value: str) -> str:
+    return _decode_base64url_bytes(value).decode("utf-8", errors="replace")
 
 
 def _encode_message(message: EmailMessage) -> str:
@@ -115,6 +127,30 @@ def _extract_body(payload: dict[str, Any]) -> str:
     if mime_type == "text/html" and data:
         return _html_to_text(_decode_base64url(data))
     return ""
+
+
+def _purge_prepared_drafts() -> None:
+    now = time.time()
+    expired = [
+        draft_id
+        for draft_id, (_, created_at) in _PREPARED_DRAFTS.items()
+        if now - created_at > _PREPARED_DRAFT_TTL_SECONDS
+    ]
+    for draft_id in expired:
+        _PREPARED_DRAFTS.pop(draft_id, None)
+
+
+def _remember_prepared_draft(draft_id: str, fingerprint: str) -> None:
+    with _PREPARED_DRAFT_LOCK:
+        _purge_prepared_drafts()
+        _PREPARED_DRAFTS[draft_id] = (fingerprint, time.time())
+
+
+def _take_prepared_draft(draft_id: str) -> str | None:
+    with _PREPARED_DRAFT_LOCK:
+        _purge_prepared_drafts()
+        prepared = _PREPARED_DRAFTS.pop(draft_id, None)
+        return prepared[0] if prepared is not None else None
 
 
 class GmailClient:
@@ -303,27 +339,59 @@ class GmailClient:
         }
 
     def draft_metadata(self, draft_id: str) -> dict[str, Any]:
+        """Return confirmation-safe metadata and bind a send guard to this exact draft.
+
+        The guard hashes Gmail's RAW representation, covering headers, body and
+        attachments. Any edit after this call invalidates the later send.
+        """
+
         draft_id = draft_id.strip()
         if not draft_id:
             raise GmailError("draft_id is required")
         service = self._service()
-        draft = self._execute(
-            service.users().drafts().get(
-                userId="me",
-                id=draft_id,
-                format="metadata",
-            )
-        )
-        message = draft.get("message") or {}
-        metadata = self._message_metadata(message)
-        metadata["draft_id"] = draft_id
-        return metadata
+        snapshot = self._draft_raw_snapshot(service, draft_id)
+        _remember_prepared_draft(draft_id, str(snapshot["fingerprint"]))
+
+        recipients: list[str] = []
+        if snapshot["to"]:
+            recipients.append(f"To: {snapshot['to']}")
+        if snapshot["cc"]:
+            recipients.append(f"Cc: {snapshot['cc']}")
+        if snapshot["bcc"]:
+            recipients.append(f"Bcc: {snapshot['bcc']}")
+
+        return {
+            "draft_id": draft_id,
+            "id": snapshot["id"],
+            "thread_id": snapshot["thread_id"],
+            # ToolRouter's existing confirmation summary reads `to`; include every
+            # delivery header so Bcc/Cc cannot be hidden from the user.
+            "to": "; ".join(recipients) or "unknown recipient",
+            "cc": snapshot["cc"],
+            "bcc": snapshot["bcc"],
+            "subject": snapshot["subject"],
+        }
 
     def send_draft(self, draft_id: str) -> dict[str, Any]:
+        """Send only the exact RAW draft that was inspected for confirmation."""
+
         draft_id = draft_id.strip()
         if not draft_id:
             raise GmailError("draft_id is required")
+
+        expected_fingerprint = _take_prepared_draft(draft_id)
+        if expected_fingerprint is None:
+            raise GmailError(
+                "Draft send is not bound to a verified confirmation snapshot. Request confirmation again."
+            )
+
         service = self._service()
+        current = self._draft_raw_snapshot(service, draft_id)
+        if current["fingerprint"] != expected_fingerprint:
+            raise GmailError(
+                "Draft changed after confirmation was requested. Nothing was sent; request a new confirmation."
+            )
+
         sent = self._execute(
             service.users().drafts().send(
                 userId="me",
@@ -337,6 +405,30 @@ class GmailClient:
             "sent": True,
         }
 
+    def _draft_raw_snapshot(self, service, draft_id: str) -> dict[str, str]:
+        draft = self._execute(
+            service.users().drafts().get(
+                userId="me",
+                id=draft_id,
+                format="raw",
+            )
+        )
+        message = draft.get("message") or {}
+        raw_encoded = str(message.get("raw", ""))
+        if not raw_encoded:
+            raise GmailError("Gmail draft did not include RAW message content")
+        raw_bytes = _decode_base64url_bytes(raw_encoded)
+        parsed = BytesParser(policy=policy.default).parsebytes(raw_bytes)
+        return {
+            "id": str(message.get("id", "")),
+            "thread_id": str(message.get("threadId", "")),
+            "to": str(parsed.get("To", "")),
+            "cc": str(parsed.get("Cc", "")),
+            "bcc": str(parsed.get("Bcc", "")),
+            "subject": str(parsed.get("Subject", "")),
+            "fingerprint": hashlib.sha256(raw_bytes).hexdigest(),
+        }
+
     @staticmethod
     def _message_metadata(message: dict[str, Any]) -> dict[str, Any]:
         headers = _headers(message.get("payload") or {})
@@ -346,6 +438,7 @@ class GmailClient:
             "from": headers.get("from", ""),
             "to": headers.get("to", ""),
             "cc": headers.get("cc", ""),
+            "bcc": headers.get("bcc", ""),
             "subject": headers.get("subject", ""),
             "date": headers.get("date", ""),
             "message_id_header": headers.get("message-id", ""),
