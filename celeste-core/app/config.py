@@ -25,6 +25,7 @@ class Settings:
     gmail_enabled: bool
     gmail_credentials_file: Path
     gmail_token_file: Path
+    gmail_poll_seconds: int
     version: str = "0.4.1"
 
     @classmethod
@@ -62,6 +63,11 @@ class Settings:
                 str(secrets_dir / "gmail-token.json"),
             )
         ).expanduser()
+        try:
+            requested_poll_seconds = int(os.getenv("CELESTE_GMAIL_POLL_SECONDS", "0"))
+        except ValueError:
+            requested_poll_seconds = 0
+        gmail_poll_seconds = 0 if requested_poll_seconds <= 0 else max(60, min(requested_poll_seconds, 3600))
 
         return cls(
             api_token=api_token,
@@ -73,4 +79,5 @@ class Settings:
             gmail_enabled=gmail_enabled,
             gmail_credentials_file=gmail_credentials_file,
             gmail_token_file=gmail_token_file,
+            gmail_poll_seconds=gmail_poll_seconds,
         )
