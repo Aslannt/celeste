@@ -69,7 +69,11 @@ class NoteRepository(
         var synced = 0
         for (note in pending) {
             try {
-                api.createNote(note.title, note.content)
+                api.createNote(
+                    title = note.title,
+                    content = note.content,
+                    idempotencyKey = note.localId,
+                )
                 pendingDao.deleteById(note.localId)
                 synced += 1
             } catch (e: Exception) {
