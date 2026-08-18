@@ -7,6 +7,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     api_token: str
@@ -15,7 +22,10 @@ class Settings:
     llm_model: str
     llm_timeout_seconds: float
     openai_api_key: str | None
-    version: str = "0.4.0"
+    gmail_enabled: bool
+    gmail_credentials_file: Path
+    gmail_token_file: Path
+    version: str = "0.4.1"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -38,6 +48,21 @@ class Settings:
         llm_timeout_seconds = max(5.0, min(llm_timeout_seconds, 300.0))
         openai_api_key = os.getenv("OPENAI_API_KEY") or None
 
+        secrets_dir = core_dir / ".secrets"
+        gmail_enabled = _env_bool("CELESTE_GMAIL_ENABLED", False)
+        gmail_credentials_file = Path(
+            os.getenv(
+                "CELESTE_GMAIL_CREDENTIALS_FILE",
+                str(secrets_dir / "gmail-credentials.json"),
+            )
+        ).expanduser()
+        gmail_token_file = Path(
+            os.getenv(
+                "CELESTE_GMAIL_TOKEN_FILE",
+                str(secrets_dir / "gmail-token.json"),
+            )
+        ).expanduser()
+
         return cls(
             api_token=api_token,
             brain_dir=brain_dir,
@@ -45,4 +70,7 @@ class Settings:
             llm_model=llm_model,
             llm_timeout_seconds=llm_timeout_seconds,
             openai_api_key=openai_api_key,
+            gmail_enabled=gmail_enabled,
+            gmail_credentials_file=gmail_credentials_file,
+            gmail_token_file=gmail_token_file,
         )
