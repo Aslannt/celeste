@@ -11,7 +11,10 @@ from dotenv import load_dotenv
 class Settings:
     api_token: str
     brain_dir: Path
-    version: str = "0.3.0"
+    llm_provider: str
+    llm_model: str
+    openai_api_key: str | None
+    version: str = "0.4.0"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -25,4 +28,14 @@ class Settings:
         default_brain = repo_dir / "CelesteBrain"
         brain_dir = Path(os.getenv("CELESTE_BRAIN_DIR", str(default_brain))).expanduser()
         api_token = os.getenv("CELESTE_API_TOKEN", "celeste-local-dev")
-        return cls(api_token=api_token, brain_dir=brain_dir)
+        llm_provider = os.getenv("CELESTE_LLM_PROVIDER", "local_rules").strip().lower()
+        llm_model = os.getenv("CELESTE_LLM_MODEL", "gpt-5").strip() or "gpt-5"
+        openai_api_key = os.getenv("OPENAI_API_KEY") or None
+
+        return cls(
+            api_token=api_token,
+            brain_dir=brain_dir,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            openai_api_key=openai_api_key,
+        )
