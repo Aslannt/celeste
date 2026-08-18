@@ -48,6 +48,10 @@ private fun CelesteScreen() {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<Note>>(emptyList()) }
     var searchPerformed by remember { mutableStateOf(false) }
+    var assistantInput by remember { mutableStateOf("") }
+    var assistantReply by remember { mutableStateOf("") }
+    var assistantProvider by remember { mutableStateOf("") }
+    var assistantEvents by remember { mutableStateOf<List<AssistantEvent>>(emptyList()) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(config.coreBaseUrl.isBlank()) }
@@ -191,6 +195,59 @@ private fun CelesteScreen() {
                         message = "Configuracion guardada"
                     },
                 )
+            }
+
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Hablar con Celeste", fontWeight = FontWeight.Bold)
+                    Text("Celeste puede usar herramientas controladas para consultar o guardar memoria.")
+                    OutlinedTextField(
+                        value = assistantInput,
+                        onValueChange = { assistantInput = it },
+                        label = { Text("Preguntale algo a Celeste") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        enabled = !busy && assistantInput.isNotBlank(),
+                        onClick = {
+                            val prompt = assistantInput.trim()
+                            runIo {
+                                val api = CelesteApi(store.load())
+                                val result = withContext(Dispatchers.IO) {
+                                    api.askCeleste(prompt)
+                                }
+                                assistantReply = result.reply
+                                assistantProvider = result.provider
+                                assistantEvents = result.events
+                                assistantInput = ""
+                                message = "Respuesta de Celeste"
+
+                                if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
+                                    try {
+                                        notes = withContext(Dispatchers.IO) { api.listNotes() }
+                                    } catch (_: Exception) {
+                                        // The assistant tool already confirmed the note write.
+                                    }
+                                }
+                            }
+                        },
+                    ) { Text("Preguntar") }
+
+                    if (assistantReply.isNotBlank()) {
+                        HorizontalDivider()
+                        Text(assistantReply)
+                        if (assistantProvider.isNotBlank()) {
+                            Text("Proveedor: $assistantProvider", style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (assistantEvents.isNotEmpty()) {
+                            Text(
+                                "Herramientas: " + assistantEvents.joinToString { "${it.tool} (${it.risk})" },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                }
             }
 
             Card(Modifier.fillMaxWidth()) {
