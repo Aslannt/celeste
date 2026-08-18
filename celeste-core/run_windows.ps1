@@ -11,9 +11,8 @@ $Python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 Write-Host "[Celeste] Instalando/actualizando dependencias..."
 & $Python -m pip install -e ".[dev]"
 
-if (-not $env:CELESTE_API_TOKEN) {
-    $env:CELESTE_API_TOKEN = "celeste-local-dev"
-    Write-Warning "Usando token de desarrollo. Solo para pruebas en tu LAN."
+if (-not $env:CELESTE_API_TOKEN -and -not (Test-Path ".env")) {
+    Write-Warning "No existe .env ni CELESTE_API_TOKEN. Se usara el token de desarrollo. Solo para pruebas en tu LAN."
 }
 
 Write-Host "[Celeste] Iniciando Core en http://0.0.0.0:8000"
