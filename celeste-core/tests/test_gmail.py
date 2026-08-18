@@ -68,12 +68,13 @@ class FakeDrafts:
         self.draft_metadata_message = draft_metadata_message or {
             "id": "draft-message-1",
             "threadId": "thread-1",
-            "payload": {
-                "headers": [
-                    {"name": "To", "value": "destino@example.com"},
-                    {"name": "Subject", "value": "Asunto de prueba"},
-                ]
-            },
+            "raw": _b64(
+                "To: destino@example.com\r\n"
+                "Subject: Asunto de prueba\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                "\r\n"
+                "draft"
+            ),
             "snippet": "draft",
         }
 
