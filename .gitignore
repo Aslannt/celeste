@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Secrets / local config
+.env
+
+# Celeste personal data (never commit by default)
+CelesteBrain/
+celeste-core/CelesteBrain/
+
+# OS
+.DS_Store
+Thumbs.db
