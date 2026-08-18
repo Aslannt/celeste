@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 class Settings:
     api_token: str
     brain_dir: Path
-    version: str = "0.1.0"
+    version: str = "0.3.0"
 
     @classmethod
     def from_env(cls) -> "Settings":
