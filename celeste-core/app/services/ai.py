@@ -1,0 +1,251 @@
+from __future__ import annotations
+
+import json
+import re
+import unicodedata
+from dataclasses import dataclass
+from typing import Protocol
+
+from app.config import Settings
+from app.services.tools import ToolExecution, ToolRouter
+
+
+class AIProviderError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class AssistantResult:
+    reply: str
+    provider: str
+    events: list[ToolExecution]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "reply": self.reply,
+            "provider": self.provider,
+            "events": [event.to_dict() for event in self.events],
+        }
+
+
+class AIProvider(Protocol):
+    name: str
+
+    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+        ...
+
+
+def _plain(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", value)
+    return "".join(char for char in decomposed if not unicodedata.combining(char)).casefold().strip()
+
+
+class LocalRulesProvider:
+    """Offline development provider.
+
+    It intentionally handles only a few explicit Spanish intents. It gives us a
+    useful assistant and exercises the Tool Router without requiring any cloud
+    key. It is not presented as a replacement for an LLM.
+    """
+
+    name = "local_rules"
+
+    _SEARCH_PATTERNS = [
+        re.compile(r"^(?:busca|buscar)\s+(?:en\s+(?:mi\s+)?memoria\s+)?(.+)$"),
+        re.compile(r"^que sabes (?:de|sobre)\s+(.+)$"),
+        re.compile(r"^recuerdas (?:algo\s+)?(?:de|sobre)\s+(.+)$"),
+    ]
+    _CREATE_PATTERNS = [
+        re.compile(r"^(?:recuerda que|guarda que|anota que)\s+(.+)$"),
+        re.compile(r"^crea una nota(?: que diga| sobre)?\s+(.+)$"),
+    ]
+
+    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+        text = message.strip()
+        normalized = _plain(text)
+        if not text:
+            raise AIProviderError("El mensaje no puede estar vacio.")
+
+        if "estado" in normalized and any(word in normalized for word in ("pc", "computador", "core")):
+            event = router.execute("get_pc_status", {})
+            output = event.output if isinstance(event.output, dict) else {}
+            reply = (
+                f"Celeste Core esta {output.get('status', 'desconocido')} en "
+                f"{output.get('hostname', 'este equipo')} ({output.get('os', 'SO desconocido')})."
+            )
+            return AssistantResult(reply=reply, provider=self.name, events=[event])
+
+        for pattern in self._CREATE_PATTERNS:
+            match = pattern.match(normalized)
+            if match:
+                # Use the original text after the first matched intent phrase when possible,
+                # preserving accents/case in the user's memory.
+                content = self._extract_original_payload(text, match.group(1))
+                title = content.split(".", 1)[0].strip()[:100] or "Nota de Celeste"
+                event = router.execute(
+                    "create_note",
+                    {
+                        "title": title,
+                        "content": content,
+                        "type": "note",
+                        "tags": ["assistant"],
+                    },
+                )
+                if event.status == "executed":
+                    return AssistantResult(
+                        reply=f"Listo. Guarde '{title}' en Celeste Brain.",
+                        provider=self.name,
+                        events=[event],
+                    )
+                return AssistantResult(
+                    reply="No pude guardar la nota.",
+                    provider=self.name,
+                    events=[event],
+                )
+
+        for pattern in self._SEARCH_PATTERNS:
+            match = pattern.match(normalized)
+            if match:
+                query = match.group(1).strip()
+                event = router.execute("search_memory", {"query": query, "limit": 5})
+                notes = event.output if isinstance(event.output, list) else []
+                if not notes:
+                    reply = f"No encontre nada en Celeste Brain sobre '{query}'."
+                else:
+                    lines = []
+                    for note in notes[:5]:
+                        title = str(note.get("title", "Nota"))
+                        content = str(note.get("content", "")).strip().replace("\n", " ")
+                        preview = content[:180]
+                        lines.append(f"- {title}" + (f": {preview}" if preview else ""))
+                    reply = "Encontre esto en Celeste Brain:\n" + "\n".join(lines)
+                return AssistantResult(reply=reply, provider=self.name, events=[event])
+
+        return AssistantResult(
+            reply=(
+                "Estoy funcionando con el proveedor local de reglas. Puedo buscar recuerdos, "
+                "guardar una nota o consultar el estado del PC. Para conversacion abierta y "
+                "seleccion inteligente de herramientas, configura CELESTE_LLM_PROVIDER=openai."
+            ),
+            provider=self.name,
+            events=[],
+        )
+
+    @staticmethod
+    def _extract_original_payload(original: str, normalized_payload: str) -> str:
+        # The normalized match gives us the intended payload. Usually it appears at
+        # the end of the original input; slicing by length keeps the user's spelling.
+        payload_length = len(normalized_payload)
+        if payload_length <= len(original):
+            candidate = original[-payload_length:].strip()
+            if candidate:
+                return candidate
+        return original.strip()
+
+
+class OpenAIProvider:
+    name = "openai"
+
+    _INSTRUCTIONS = """You are Celeste, a private personal assistant running through Celeste Core.
+Answer in Spanish unless the user clearly uses another language.
+Use the provided tools whenever the user asks about Celeste Brain memories or PC status, or asks you to save a durable memory.
+Never claim that a tool action happened unless the tool result says status=executed.
+If a tool returns confirmation_required, clearly ask the user to confirm; never pretend it already ran.
+Never request or invent unrestricted shell/admin access. You only have the listed tools.
+Keep answers concise and useful.
+"""
+
+    def __init__(self, api_key: str, model: str):
+        if not api_key:
+            raise AIProviderError("OPENAI_API_KEY no esta configurada.")
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise AIProviderError("Instala la dependencia openai para usar este proveedor.") from exc
+        self.client = OpenAI(api_key=api_key)
+        self.model = model
+
+    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+        if not message.strip():
+            raise AIProviderError("El mensaje no puede estar vacio.")
+
+        tools = router.tool_schemas()
+        try:
+            response = self.client.responses.create(
+                model=self.model,
+                instructions=self._INSTRUCTIONS,
+                input=message,
+                tools=tools,
+            )
+        except Exception as exc:
+            raise AIProviderError(f"El proveedor OpenAI no respondio: {type(exc).__name__}") from exc
+
+        events: list[ToolExecution] = []
+
+        for _ in range(4):
+            calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
+            if not calls:
+                reply = (response.output_text or "").strip()
+                if not reply:
+                    reply = "No obtuve una respuesta de texto del proveedor."
+                return AssistantResult(reply=reply, provider=self.name, events=events)
+
+            tool_outputs: list[dict[str, str]] = []
+            for call in calls:
+                try:
+                    arguments = json.loads(call.arguments or "{}")
+                    if not isinstance(arguments, dict):
+                        raise ValueError("arguments must be an object")
+                except (json.JSONDecodeError, ValueError):
+                    execution = ToolExecution(
+                        tool=str(call.name),
+                        risk=self._unknown_risk(),
+                        status="error",
+                        summary="El proveedor genero argumentos de herramienta invalidos.",
+                    )
+                else:
+                    execution = router.execute(str(call.name), arguments)
+
+                events.append(execution)
+                tool_outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": str(call.call_id),
+                        "output": json.dumps(execution.to_dict(), ensure_ascii=False, default=str),
+                    }
+                )
+
+            try:
+                response = self.client.responses.create(
+                    model=self.model,
+                    instructions=self._INSTRUCTIONS,
+                    previous_response_id=response.id,
+                    input=tool_outputs,
+                    tools=tools,
+                )
+            except Exception as exc:
+                raise AIProviderError(
+                    f"El proveedor OpenAI fallo despues de usar una herramienta: {type(exc).__name__}"
+                ) from exc
+
+        return AssistantResult(
+            reply="Detuve la ejecucion porque se alcanzo el limite de rondas de herramientas.",
+            provider=self.name,
+            events=events,
+        )
+
+    @staticmethod
+    def _unknown_risk():
+        from app.services.tools import ToolRisk
+
+        return ToolRisk.RESTRICTED
+
+
+def build_provider(settings: Settings) -> AIProvider:
+    if settings.llm_provider == "local_rules":
+        return LocalRulesProvider()
+    if settings.llm_provider == "openai":
+        return OpenAIProvider(settings.openai_api_key or "", settings.llm_model)
+    raise AIProviderError(
+        f"Proveedor de IA no soportado: {settings.llm_provider}. Usa local_rules u openai."
+    )
