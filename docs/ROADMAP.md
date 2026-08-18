@@ -36,7 +36,7 @@
 - [x] Mantener indice sincronizado con CRUD de notas
 - [x] Crear `GET /api/v1/notes/search`
 - [x] Agregar buscador en Celeste Android
-- [ ] Validar FTS5 y busqueda en el PC y telefono reales
+- [x] Validar FTS5 y busqueda en el PC y telefono reales
 
 ## V0.4 - IA y Tool Router
 
