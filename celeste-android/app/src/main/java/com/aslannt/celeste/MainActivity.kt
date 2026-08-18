@@ -52,6 +52,7 @@ private fun CelesteScreen() {
     var assistantReply by remember { mutableStateOf("") }
     var assistantProvider by remember { mutableStateOf("") }
     var assistantEvents by remember { mutableStateOf<List<AssistantEvent>>(emptyList()) }
+    var pendingAssistantActions by remember { mutableStateOf<List<AssistantEvent>>(emptyList()) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(config.coreBaseUrl.isBlank()) }
@@ -74,6 +75,12 @@ private fun CelesteScreen() {
         pendingNotes = withContext(Dispatchers.IO) { repository.listPending() }
     }
 
+    suspend fun loadAssistantConfirmations(api: CelesteApi) {
+        pendingAssistantActions = withContext(Dispatchers.IO) {
+            api.listPendingAssistantActions()
+        }
+    }
+
     fun refresh() = runIo {
         val current = store.load()
         val api = CelesteApi(current)
@@ -82,10 +89,12 @@ private fun CelesteScreen() {
             val status = withContext(Dispatchers.IO) { api.getStatus() }
             val sync = withContext(Dispatchers.IO) { repository.syncPending() }
             val remoteNotes = withContext(Dispatchers.IO) { api.listNotes() }
+            val confirmations = withContext(Dispatchers.IO) { api.listPendingAssistantActions() }
 
             statusText = if (status.status == "online") "En linea" else status.status
             hostname = status.hostname
             notes = remoteNotes
+            pendingAssistantActions = confirmations
             loadPending()
 
             message = if (sync.syncedCount > 0) {
@@ -200,7 +209,7 @@ private fun CelesteScreen() {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Hablar con Celeste", fontWeight = FontWeight.Bold)
-                    Text("Celeste puede usar herramientas controladas para consultar o guardar memoria.")
+                    Text("Celeste usa herramientas con permisos separados. Las acciones sensibles esperan tu confirmacion.")
                     OutlinedTextField(
                         value = assistantInput,
                         onValueChange = { assistantInput = it },
@@ -221,6 +230,7 @@ private fun CelesteScreen() {
                                 assistantProvider = result.provider
                                 assistantEvents = result.events
                                 assistantInput = ""
+                                loadAssistantConfirmations(api)
                                 message = "Respuesta de Celeste"
 
                                 if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
@@ -242,9 +252,65 @@ private fun CelesteScreen() {
                         }
                         if (assistantEvents.isNotEmpty()) {
                             Text(
-                                "Herramientas: " + assistantEvents.joinToString { "${it.tool} (${it.risk})" },
+                                "Herramientas: " + assistantEvents.joinToString {
+                                    "${it.tool} (${it.risk}, ${it.status})"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                             )
+                        }
+                    }
+
+                    if (pendingAssistantActions.isNotEmpty()) {
+                        HorizontalDivider()
+                        Text("Requiere tu confirmacion", fontWeight = FontWeight.SemiBold)
+                        pendingAssistantActions.forEach { action ->
+                            val confirmationId = action.confirmationId
+                            Text(action.summary ?: action.tool)
+                            Text(
+                                "${action.tool} · ${action.risk}",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    enabled = !busy && confirmationId != null,
+                                    onClick = {
+                                        if (confirmationId != null) {
+                                            runIo {
+                                                val api = CelesteApi(store.load())
+                                                val result = withContext(Dispatchers.IO) {
+                                                    api.confirmAssistantAction(confirmationId)
+                                                }
+                                                assistantEvents = assistantEvents + result
+                                                loadAssistantConfirmations(api)
+                                                if (result.status == "executed") {
+                                                    message = "Accion confirmada: ${result.tool}"
+                                                    if (result.tool in setOf("update_note", "delete_note", "create_note")) {
+                                                        notes = withContext(Dispatchers.IO) { api.listNotes() }
+                                                    }
+                                                } else {
+                                                    message = result.summary ?: "La accion no se pudo ejecutar."
+                                                }
+                                            }
+                                        }
+                                    },
+                                ) { Text("Confirmar") }
+                                OutlinedButton(
+                                    enabled = !busy && confirmationId != null,
+                                    onClick = {
+                                        if (confirmationId != null) {
+                                            runIo {
+                                                val api = CelesteApi(store.load())
+                                                val result = withContext(Dispatchers.IO) {
+                                                    api.cancelAssistantAction(confirmationId)
+                                                }
+                                                assistantEvents = assistantEvents + result
+                                                loadAssistantConfirmations(api)
+                                                message = "Accion cancelada: ${result.tool}"
+                                            }
+                                        }
+                                    },
+                                ) { Text("Cancelar") }
+                            }
                         }
                     }
                 }
