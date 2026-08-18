@@ -73,6 +73,25 @@ class CelesteApi(private val config: CelesteConfig) {
         )
     }
 
+    fun listPendingAssistantActions(): List<AssistantEvent> {
+        val text = requestText(
+            "/api/v1/assistant/confirmations",
+            "GET",
+            authenticated = true,
+        )
+        val array = JSONArray(text)
+        return (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            AssistantEvent(
+                tool = item.getString("tool"),
+                risk = "CONFIRM",
+                status = "confirmation_required",
+                confirmationId = item.getString("confirmation_id"),
+                summary = item.optString("summary").takeIf { it.isNotBlank() },
+            )
+        }
+    }
+
     fun confirmAssistantAction(confirmationId: String): AssistantEvent {
         val encoded = URLEncoder.encode(confirmationId, StandardCharsets.UTF_8.toString())
         val json = request(
@@ -80,6 +99,16 @@ class CelesteApi(private val config: CelesteConfig) {
             "POST",
             authenticated = true,
             readTimeoutMs = 60_000,
+        )
+        return parseAssistantEvent(json)
+    }
+
+    fun cancelAssistantAction(confirmationId: String): AssistantEvent {
+        val encoded = URLEncoder.encode(confirmationId, StandardCharsets.UTF_8.toString())
+        val json = request(
+            "/api/v1/assistant/confirm/$encoded",
+            "DELETE",
+            authenticated = true,
         )
         return parseAssistantEvent(json)
     }
