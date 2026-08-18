@@ -23,7 +23,15 @@ def _slugify(value: str) -> str:
     return value.strip("-")[:60] or "note"
 
 
+def _normalize_tags(tags: list[str]) -> list[str]:
+    return sorted(set(tag.strip() for tag in tags if tag.strip()))
+
+
 class NoteNotFoundError(KeyError):
+    pass
+
+
+class IdempotencyConflictError(ValueError):
     pass
 
 
@@ -41,7 +49,7 @@ class MarkdownNoteStorage:
 
     @staticmethod
     def _serialize(note: Note) -> str:
-        metadata = note.model_dump(exclude={"content"})
+        metadata = note.model_dump(exclude={"content"}, exclude_none=True)
         frontmatter = yaml.safe_dump(
             metadata,
             allow_unicode=True,
@@ -64,19 +72,46 @@ class MarkdownNoteStorage:
         metadata["content"] = body.rstrip("\n")
         return Note.model_validate(metadata)
 
-    def create(self, data: NoteCreate) -> Note:
+    def _find_by_idempotency_key(self, idempotency_key: str) -> Note | None:
+        for path in self.notes_dir.glob("*.md"):
+            try:
+                note = self._deserialize(path.read_text(encoding="utf-8"))
+            except (ValueError, TypeError, yaml.YAMLError):
+                continue
+            if note.idempotency_key == idempotency_key:
+                return note
+        return None
+
+    @staticmethod
+    def _matches_create_payload(note: Note, data: NoteCreate) -> bool:
+        return (
+            note.title == data.title.strip()
+            and note.content == data.content
+            and note.type == data.type
+            and note.tags == _normalize_tags(data.tags)
+        )
+
+    def create(self, data: NoteCreate, idempotency_key: str | None = None) -> Note:
         with _LOCK:
+            if idempotency_key:
+                existing = self._find_by_idempotency_key(idempotency_key)
+                if existing is not None:
+                    if not self._matches_create_payload(existing, data):
+                        raise IdempotencyConflictError(idempotency_key)
+                    return existing
+
             now = _utc_now()
             note = Note(
                 id=str(uuid4()),
                 title=data.title.strip(),
                 content=data.content,
                 type=data.type,
-                tags=sorted(set(tag.strip() for tag in data.tags if tag.strip())),
+                tags=_normalize_tags(data.tags),
                 created_at=now,
                 updated_at=now,
                 version=1,
                 deleted=False,
+                idempotency_key=idempotency_key,
             )
             path = self.notes_dir / f"{note.id}-{_slugify(note.title)}.md"
             path.write_text(self._serialize(note), encoding="utf-8")
@@ -106,7 +141,7 @@ class MarkdownNoteStorage:
             changes = data.model_dump(exclude_unset=True)
             for key, value in changes.items():
                 if key == "tags" and value is not None:
-                    value = sorted(set(tag.strip() for tag in value if tag.strip()))
+                    value = _normalize_tags(value)
                 setattr(note, key, value)
             note.updated_at = _utc_now()
             note.version += 1
