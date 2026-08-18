@@ -45,6 +45,9 @@ private fun CelesteScreen() {
     var pendingNotes by remember { mutableStateOf<List<PendingNoteEntity>>(emptyList()) }
     var noteTitle by remember { mutableStateOf("") }
     var noteContent by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<Note>>(emptyList()) }
+    var searchPerformed by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(config.coreBaseUrl.isBlank()) }
@@ -105,7 +108,7 @@ private fun CelesteScreen() {
         }
     }
 
-    // V0.2: while there are pending notes, retry periodically. The queue itself is
+    // While there are pending notes, retry periodically. The queue itself is
     // durable in Room, so closing or restarting the app never discards a note.
     LaunchedEffect(pendingNotes.size) {
         if (pendingNotes.isEmpty()) return@LaunchedEffect
@@ -236,6 +239,59 @@ private fun CelesteScreen() {
                             }
                         },
                     ) { Text("Guardar nota") }
+                }
+            }
+
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Buscar en Celeste Brain", fontWeight = FontWeight.Bold)
+                    Text("Busca por titulo, contenido o tags.")
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { value ->
+                            searchQuery = value
+                            if (value.isBlank()) {
+                                searchPerformed = false
+                                searchResults = emptyList()
+                            }
+                        },
+                        label = { Text("Que quieres encontrar?") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        enabled = !busy && searchQuery.isNotBlank(),
+                        onClick = {
+                            val query = searchQuery.trim()
+                            runIo {
+                                val api = CelesteApi(store.load())
+                                searchResults = withContext(Dispatchers.IO) {
+                                    api.searchNotes(query)
+                                }
+                                searchPerformed = true
+                                message = if (searchResults.isEmpty()) {
+                                    "No encontre notas para '$query'."
+                                } else {
+                                    "Encontradas ${searchResults.size} nota(s) para '$query'."
+                                }
+                            }
+                        },
+                    ) { Text("Buscar") }
+
+                    if (searchPerformed) {
+                        if (searchResults.isEmpty()) {
+                            Text("Sin resultados.")
+                        } else {
+                            searchResults.take(10).forEach { note ->
+                                HorizontalDivider()
+                                Text(note.title, fontWeight = FontWeight.SemiBold)
+                                if (note.content.isNotBlank()) Text(note.content, maxLines = 3)
+                                if (note.tags.isNotEmpty()) {
+                                    Text(note.tags.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
