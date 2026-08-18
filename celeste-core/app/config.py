@@ -13,6 +13,7 @@ class Settings:
     brain_dir: Path
     llm_provider: str
     llm_model: str
+    llm_timeout_seconds: float
     openai_api_key: str | None
     version: str = "0.4.0"
 
@@ -29,7 +30,12 @@ class Settings:
         brain_dir = Path(os.getenv("CELESTE_BRAIN_DIR", str(default_brain))).expanduser()
         api_token = os.getenv("CELESTE_API_TOKEN", "celeste-local-dev")
         llm_provider = os.getenv("CELESTE_LLM_PROVIDER", "local_rules").strip().lower()
-        llm_model = os.getenv("CELESTE_LLM_MODEL", "gpt-5").strip() or "gpt-5"
+        llm_model = os.getenv("CELESTE_LLM_MODEL", "gpt-5.6").strip() or "gpt-5.6"
+        try:
+            llm_timeout_seconds = float(os.getenv("CELESTE_LLM_TIMEOUT_SECONDS", "60"))
+        except ValueError:
+            llm_timeout_seconds = 60.0
+        llm_timeout_seconds = max(5.0, min(llm_timeout_seconds, 300.0))
         openai_api_key = os.getenv("OPENAI_API_KEY") or None
 
         return cls(
@@ -37,5 +43,6 @@ class Settings:
             brain_dir=brain_dir,
             llm_provider=llm_provider,
             llm_model=llm_model,
+            llm_timeout_seconds=llm_timeout_seconds,
             openai_api_key=openai_api_key,
         )
