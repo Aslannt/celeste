@@ -1,4 +1,4 @@
-# Celeste Android V0.2
+# Celeste Android V0.2.1
 
 Cliente Android de Celeste para control del PC y memoria personal.
 
@@ -12,6 +12,7 @@ Cliente Android de Celeste para control del PC y memoria personal.
 - Sincronizacion inmediata si Core esta disponible.
 - Reintento automatico de notas pendientes mientras la app esta activa.
 - Reintento al abrir la app y al pulsar `Actualizar`.
+- Sincronizacion idempotente para evitar notas duplicadas en reintentos.
 
 ## Notas offline
 
@@ -21,9 +22,13 @@ Al guardar una nota, Celeste la escribe primero en la base de datos Room del tel
 - Si el PC/Core esta apagado o no se puede alcanzar, la nota permanece en `Pendientes de sincronizar`.
 - Cuando Core vuelve, la app reintenta y la nota termina en `CelesteBrain/notes` como Markdown.
 
-Esta V0.2 usa una cola de entrega al menos una vez: prioriza no perder contenido. Una interrupcion exactamente despues de que Core cree una nota pero antes de que Android reciba la respuesta podria producir un duplicado. La idempotencia se implementara en una iteracion posterior si hace falta.
+## Idempotencia V0.2.1
 
-La V0.2 todavia no cachea en Room todas las notas remotas ni hace sincronizacion bidireccional/conflictos. Room se usa solamente como cola durable para nuevas notas creadas desde Android.
+Cada nota pendiente tiene un `localId` UUID generado una sola vez en Android. Ese mismo valor se reutiliza como `X-Celeste-Idempotency-Key` en cada intento de sincronizacion.
+
+Celeste Core guarda la clave en el frontmatter Markdown. Si recibe el mismo intento otra vez con el mismo contenido, devuelve la nota existente en vez de crear un segundo archivo. Si una clave ya usada llega con contenido distinto, Core responde HTTP 409.
+
+La V0.2.1 todavia no cachea en Room todas las notas remotas ni hace sincronizacion bidireccional/conflictos. Room se usa solamente como cola durable para nuevas notas creadas desde Android.
 
 ## Configuracion inicial
 
@@ -41,12 +46,14 @@ La app usa HTTP sin cifrar solo para pruebas dentro de la LAN. No expongas Celes
 
 Abre esta carpeta (`celeste-android`) como proyecto Gradle, deja que Android Studio sincronice dependencias y ejecuta en un telefono conectado a la misma Wi-Fi que el PC.
 
-## Prueba V0.2
+## Prueba V0.2.1
 
-1. Con Core online, guarda una nota y confirma que aparece inmediatamente en Celeste Brain.
-2. Apaga completamente el PC.
-3. Guarda una nota nueva desde Android y confirma que aparece en `Pendientes de sincronizar`.
-4. Cierra y vuelve a abrir la app para comprobar que la pendiente sigue presente.
-5. Enciende el PC con Wake-on-LAN desde Celeste.
-6. Cuando Core arranque automaticamente, deja Celeste Android abierta o pulsa `Actualizar`.
-7. Confirma que desaparece de pendientes y aparece en las notas remotas y en `CelesteBrain/notes`.
+1. Ejecuta los tests de Core y confirma que pasan los casos de idempotencia.
+2. Compila e instala Android V0.2.1 sobre la version actual.
+3. Verifica que una nota online sigue llegando a Celeste Brain.
+4. Apaga el PC y crea una nota offline.
+5. Cierra y abre la app y confirma que la nota sigue pendiente.
+6. Enciende el PC por Wake-on-LAN y deja que la nota se sincronice.
+7. Confirma que solo existe un archivo Markdown para esa nota.
+
+La proteccion especifica contra reintentos duplicados tambien esta cubierta por tests automatizados de Celeste Core.

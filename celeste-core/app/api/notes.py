@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 from app.config import Settings
 from app.models import Note, NoteCreate, NoteUpdate
 from app.security import require_token
-from app.services.storage import MarkdownNoteStorage, NoteNotFoundError
+from app.services.storage import IdempotencyConflictError, MarkdownNoteStorage, NoteNotFoundError
 
 router = APIRouter(
     prefix="/api/v1/notes",
@@ -24,8 +24,18 @@ def list_notes(include_deleted: bool = Query(default=False)) -> list[Note]:
 
 
 @router.post("", response_model=Note, status_code=status.HTTP_201_CREATED)
-def create_note(payload: NoteCreate) -> Note:
-    return _storage().create(payload)
+def create_note(
+    payload: NoteCreate,
+    x_celeste_idempotency_key: str | None = Header(default=None, max_length=200),
+) -> Note:
+    idempotency_key = x_celeste_idempotency_key.strip() if x_celeste_idempotency_key else None
+    try:
+        return _storage().create(payload, idempotency_key=idempotency_key or None)
+    except IdempotencyConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency key already exists with different note content",
+        ) from exc
 
 
 @router.get("/{note_id}", response_model=Note)

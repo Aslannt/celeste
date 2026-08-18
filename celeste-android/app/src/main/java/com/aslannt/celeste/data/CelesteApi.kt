@@ -28,14 +28,25 @@ class CelesteApi(private val config: CelesteConfig) {
         return (0 until array.length()).map { index -> parseNote(array.getJSONObject(index)) }
     }
 
-    fun createNote(title: String, content: String, tags: List<String> = listOf("android")): Note {
+    fun createNote(
+        title: String,
+        content: String,
+        tags: List<String> = listOf("android"),
+        idempotencyKey: String? = null,
+    ): Note {
         val body = JSONObject().apply {
             put("title", title)
             put("content", content)
             put("type", "note")
             put("tags", JSONArray(tags))
         }
-        val json = request("/api/v1/notes", "POST", authenticated = true, body = body.toString())
+        val json = request(
+            "/api/v1/notes",
+            "POST",
+            authenticated = true,
+            body = body.toString(),
+            idempotencyKey = idempotencyKey,
+        )
         return parseNote(json)
     }
 
@@ -44,13 +55,15 @@ class CelesteApi(private val config: CelesteConfig) {
         method: String,
         authenticated: Boolean,
         body: String? = null,
-    ): JSONObject = JSONObject(requestText(path, method, authenticated, body))
+        idempotencyKey: String? = null,
+    ): JSONObject = JSONObject(requestText(path, method, authenticated, body, idempotencyKey))
 
     private fun requestText(
         path: String,
         method: String,
         authenticated: Boolean,
         body: String? = null,
+        idempotencyKey: String? = null,
     ): String {
         require(config.coreBaseUrl.isNotBlank()) { "Configura la URL de Celeste Core." }
         val connection = URL(config.coreBaseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
@@ -59,6 +72,9 @@ class CelesteApi(private val config: CelesteConfig) {
         connection.readTimeout = 5000
         connection.setRequestProperty("Accept", "application/json")
         if (authenticated) connection.setRequestProperty("X-Celeste-Token", config.apiToken)
+        if (!idempotencyKey.isNullOrBlank()) {
+            connection.setRequestProperty("X-Celeste-Idempotency-Key", idempotencyKey)
+        }
 
         if (body != null) {
             connection.doOutput = true
