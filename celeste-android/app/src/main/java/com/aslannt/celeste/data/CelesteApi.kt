@@ -9,6 +9,20 @@ import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
+data class AssistantEvent(
+    val tool: String,
+    val risk: String,
+    val status: String,
+    val confirmationId: String? = null,
+    val summary: String? = null,
+)
+
+data class AssistantReply(
+    val reply: String,
+    val provider: String,
+    val events: List<AssistantEvent>,
+)
+
 class CelesteApi(private val config: CelesteConfig) {
 
     fun getStatus(): CoreStatus {
@@ -39,6 +53,33 @@ class CelesteApi(private val config: CelesteConfig) {
         return parseNotes(text)
     }
 
+    fun askCeleste(message: String): AssistantReply {
+        val body = JSONObject().apply { put("message", message) }
+        val json = request(
+            "/api/v1/assistant/chat",
+            "POST",
+            authenticated = true,
+            body = body.toString(),
+            readTimeoutMs = 60_000,
+        )
+        val eventsJson = json.optJSONArray("events") ?: JSONArray()
+        val events = (0 until eventsJson.length()).map { index ->
+            val event = eventsJson.getJSONObject(index)
+            AssistantEvent(
+                tool = event.getString("tool"),
+                risk = event.getString("risk"),
+                status = event.getString("status"),
+                confirmationId = event.optString("confirmation_id").takeIf { it.isNotBlank() },
+                summary = event.optString("summary").takeIf { it.isNotBlank() },
+            )
+        }
+        return AssistantReply(
+            reply = json.getString("reply"),
+            provider = json.getString("provider"),
+            events = events,
+        )
+    }
+
     fun createNote(
         title: String,
         content: String,
@@ -67,7 +108,10 @@ class CelesteApi(private val config: CelesteConfig) {
         authenticated: Boolean,
         body: String? = null,
         idempotencyKey: String? = null,
-    ): JSONObject = JSONObject(requestText(path, method, authenticated, body, idempotencyKey))
+        readTimeoutMs: Int = 5_000,
+    ): JSONObject = JSONObject(
+        requestText(path, method, authenticated, body, idempotencyKey, readTimeoutMs),
+    )
 
     private fun requestText(
         path: String,
@@ -75,12 +119,13 @@ class CelesteApi(private val config: CelesteConfig) {
         authenticated: Boolean,
         body: String? = null,
         idempotencyKey: String? = null,
+        readTimeoutMs: Int = 5_000,
     ): String {
         require(config.coreBaseUrl.isNotBlank()) { "Configura la URL de Celeste Core." }
         val connection = URL(config.coreBaseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         connection.requestMethod = method
         connection.connectTimeout = 2500
-        connection.readTimeout = 5000
+        connection.readTimeout = readTimeoutMs
         connection.setRequestProperty("Accept", "application/json")
         if (authenticated) connection.setRequestProperty("X-Celeste-Token", config.apiToken)
         if (!idempotencyKey.isNullOrBlank()) {
