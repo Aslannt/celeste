@@ -184,7 +184,7 @@ def test_delete_note_executes_only_after_confirmation(tmp_path, monkeypatch):
         assert all(item["id"] != created["id"] for item in search.json())
 
 
-def test_tool_audit_does_not_log_tool_arguments_or_outputs(tmp_path, monkeypatch):
+def test_tool_audit_does_not_log_tool_arguments_outputs_or_summaries(tmp_path, monkeypatch):
     brain = _configure(tmp_path, monkeypatch)
     secret_text = "super-private-audit-payload-7421"
     with TestClient(app) as client:
@@ -197,7 +197,9 @@ def test_tool_audit_does_not_log_tool_arguments_or_outputs(tmp_path, monkeypatch
         audit = client.get("/api/v1/assistant/audit?limit=20", headers=HEADERS)
 
     assert audit.status_code == 200
-    assert any(item["tool"] == "create_note" for item in audit.json()["events"])
+    events = audit.json()["events"]
+    assert any(item["tool"] == "create_note" for item in events)
+    assert all("summary" not in item for item in events)
     raw_audit = (brain / ".celeste" / "tool-audit.jsonl").read_text(encoding="utf-8")
     assert secret_text not in raw_audit
 
@@ -242,3 +244,51 @@ def test_openai_provider_disables_remote_storage_and_parallel_tool_calls(tmp_pat
         isinstance(item, dict) and item.get("type") == "function_call_output"
         for item in calls[1]["input"]
     )
+
+
+def test_openai_provider_stops_immediately_when_confirmation_is_required(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    api_calls: list[dict] = []
+    handler_calls: list[str] = []
+
+    class FakeFunctionCall:
+        type = "function_call"
+        name = "test_confirm_action"
+        arguments = "{}"
+        call_id = "call_confirm"
+
+    class FakeResponse:
+        output = [FakeFunctionCall()]
+        output_text = ""
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            api_calls.append(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        def __init__(self):
+            self.responses = FakeResponses()
+
+    import openai
+
+    monkeypatch.setattr(openai, "OpenAI", lambda **_: FakeClient())
+    router = ToolRouter(Settings.from_env())
+    router.register(
+        ToolSpec(
+            name="test_confirm_action",
+            description="Sensitive test action.",
+            risk=ToolRisk.CONFIRM,
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            handler=lambda _: handler_calls.append("executed") or {"ok": True},
+            confirmation_summary=lambda _: "Execute the sensitive test action.",
+        )
+    )
+
+    result = OpenAIProvider("test-key", "gpt-5.6", 30).answer("Haz la accion", router)
+
+    assert len(api_calls) == 1
+    assert handler_calls == []
+    assert result.events[0].status == "confirmation_required"
+    assert result.events[0].confirmation_id is not None
+    assert "confirmacion" in result.reply.lower()
