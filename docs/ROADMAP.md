@@ -20,10 +20,13 @@
 - [x] Ejecutar Celeste Core en el PC real
 - [x] Probar `/status` desde Android en LAN
 - [x] Crear una nota real desde Swagger
-- [ ] Crear proyecto `celeste-android`
-- [ ] Reemplazar Wolow con boton WOL propio
-- [ ] Guardar notas offline en Android
-- [ ] Sincronizar notas pendientes Android -> PC
+- [x] Crear proyecto `celeste-android`
+- [x] Reemplazar Wolow con boton WOL propio
+- [x] Configurar token privado local
+- [x] Autoarrancar Celeste Core al iniciar sesion en Windows
+- [x] Guardar notas offline en Android con Room
+- [x] Sincronizar notas pendientes Android -> PC
+- [ ] Validar sincronizacion idempotente Android -> Core
 
 ## V0.2 - IA y Tool Router
 
