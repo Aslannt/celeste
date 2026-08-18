@@ -67,3 +67,47 @@ def test_create_read_update_and_soft_delete_note(tmp_path, monkeypatch):
         all_notes = client.get("/api/v1/notes?include_deleted=true", headers=HEADERS)
         assert len(all_notes.json()) == 1
         assert all_notes.json()[0]["deleted"] is True
+
+
+def test_create_note_is_idempotent_for_same_key_and_payload(tmp_path, monkeypatch):
+    brain = _configure(tmp_path, monkeypatch)
+    headers = {**HEADERS, "X-Celeste-Idempotency-Key": "android-local-123"}
+    payload = {
+        "title": "Nota offline",
+        "content": "Se sincroniza una sola vez.",
+        "tags": ["android"],
+    }
+
+    with TestClient(app) as client:
+        first = client.post("/api/v1/notes", headers=headers, json=payload)
+        second = client.post("/api/v1/notes", headers=headers, json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    assert first.json()["idempotency_key"] == "android-local-123"
+
+    note_files = list((brain / "notes").glob("*.md"))
+    assert len(note_files) == 1
+    assert "idempotency_key: android-local-123" in note_files[0].read_text(encoding="utf-8")
+
+
+def test_reused_idempotency_key_with_different_payload_returns_conflict(tmp_path, monkeypatch):
+    brain = _configure(tmp_path, monkeypatch)
+    headers = {**HEADERS, "X-Celeste-Idempotency-Key": "android-local-456"}
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/v1/notes",
+            headers=headers,
+            json={"title": "Original", "content": "Contenido A"},
+        )
+        conflict = client.post(
+            "/api/v1/notes",
+            headers=headers,
+            json={"title": "Distinta", "content": "Contenido B"},
+        )
+
+    assert first.status_code == 201
+    assert conflict.status_code == 409
+    assert len(list((brain / "notes").glob("*.md"))) == 1
