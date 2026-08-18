@@ -205,10 +205,8 @@ Keep answers concise and useful.
                     reply = "No obtuve una respuesta de texto del proveedor."
                 return AssistantResult(reply=reply, provider=self.name, events=events)
 
-            # Keep the complete model output in the local request transcript. This
-            # follows the Responses function-calling loop without relying on stored
-            # remote response state.
             input_items.extend(response.output)
+            round_events: list[ToolExecution] = []
 
             for call in calls:
                 try:
@@ -226,12 +224,21 @@ Keep answers concise and useful.
                     execution = router.execute(str(call.name), arguments)
 
                 events.append(execution)
+                round_events.append(execution)
                 input_items.append(
                     {
                         "type": "function_call_output",
                         "call_id": str(call.call_id),
                         "output": json.dumps(execution.to_dict(), ensure_ascii=False, default=str),
                     }
+                )
+
+            pending = [event for event in round_events if event.status == "confirmation_required"]
+            if pending:
+                return AssistantResult(
+                    reply=self._confirmation_reply(pending),
+                    provider=self.name,
+                    events=events,
                 )
 
             response = self._create_response(input_items, tools)
@@ -241,6 +248,15 @@ Keep answers concise and useful.
             provider=self.name,
             events=events,
         )
+
+    @staticmethod
+    def _confirmation_reply(events: list[ToolExecution]) -> str:
+        summaries = [event.summary for event in events if event.summary]
+        if len(summaries) == 1:
+            return f"Necesito tu confirmacion antes de continuar: {summaries[0]}"
+        if summaries:
+            return "Necesito tu confirmacion antes de continuar:\n- " + "\n- ".join(summaries)
+        return "Necesito tu confirmacion antes de ejecutar esta accion."
 
     def _create_response(self, input_items: list[Any], tools: list[dict[str, Any]]):
         try:
