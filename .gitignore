@@ -11,6 +11,10 @@ __pycache__/
 # Secrets / local config
 .env
 
+# Runtime logs
+logs/
+celeste-core/logs/
+
 # Celeste personal data (never commit by default)
 CelesteBrain/
 celeste-core/CelesteBrain/
