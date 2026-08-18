@@ -26,9 +26,19 @@
 - [x] Autoarrancar Celeste Core al iniciar sesion en Windows
 - [x] Guardar notas offline en Android con Room
 - [x] Sincronizar notas pendientes Android -> PC
-- [ ] Validar sincronizacion idempotente Android -> Core
+- [x] Validar sincronizacion idempotente Android -> Core
 
-## V0.2 - IA y Tool Router
+## V0.3 - Brain indexado
+
+- [x] Mantener Markdown como fuente de verdad
+- [x] Crear indice reconstruible SQLite + FTS5
+- [x] Reconstruir indice al arrancar Core
+- [x] Mantener indice sincronizado con CRUD de notas
+- [x] Crear `GET /api/v1/notes/search`
+- [x] Agregar buscador en Celeste Android
+- [ ] Validar FTS5 y busqueda en el PC y telefono reales
+
+## V0.4 - IA y Tool Router
 
 - [ ] Abstraccion de proveedores LLM
 - [ ] Tool Router con niveles READ / SAFE_WRITE / CONFIRM / RESTRICTED
