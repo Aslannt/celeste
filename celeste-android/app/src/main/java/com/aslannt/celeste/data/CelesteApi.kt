@@ -64,20 +64,24 @@ class CelesteApi(private val config: CelesteConfig) {
         )
         val eventsJson = json.optJSONArray("events") ?: JSONArray()
         val events = (0 until eventsJson.length()).map { index ->
-            val event = eventsJson.getJSONObject(index)
-            AssistantEvent(
-                tool = event.getString("tool"),
-                risk = event.getString("risk"),
-                status = event.getString("status"),
-                confirmationId = event.optString("confirmation_id").takeIf { it.isNotBlank() },
-                summary = event.optString("summary").takeIf { it.isNotBlank() },
-            )
+            parseAssistantEvent(eventsJson.getJSONObject(index))
         }
         return AssistantReply(
             reply = json.getString("reply"),
             provider = json.getString("provider"),
             events = events,
         )
+    }
+
+    fun confirmAssistantAction(confirmationId: String): AssistantEvent {
+        val encoded = URLEncoder.encode(confirmationId, StandardCharsets.UTF_8.toString())
+        val json = request(
+            "/api/v1/assistant/confirm/$encoded",
+            "POST",
+            authenticated = true,
+            readTimeoutMs = 60_000,
+        )
+        return parseAssistantEvent(json)
     }
 
     fun createNote(
@@ -149,6 +153,26 @@ class CelesteApi(private val config: CelesteConfig) {
             throw IllegalStateException("Celeste Core respondio HTTP $status: $text")
         }
         return text
+    }
+
+    private fun parseAssistantEvent(json: JSONObject): AssistantEvent {
+        val confirmationId = if (json.isNull("confirmation_id")) {
+            null
+        } else {
+            json.optString("confirmation_id").takeIf { it.isNotBlank() }
+        }
+        val summary = if (json.isNull("summary")) {
+            null
+        } else {
+            json.optString("summary").takeIf { it.isNotBlank() }
+        }
+        return AssistantEvent(
+            tool = json.getString("tool"),
+            risk = json.getString("risk"),
+            status = json.getString("status"),
+            confirmationId = confirmationId,
+            summary = summary,
+        )
     }
 
     private fun parseNotes(text: String): List<Note> {
