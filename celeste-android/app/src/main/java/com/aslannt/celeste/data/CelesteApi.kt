@@ -23,6 +23,17 @@ data class AssistantReply(
     val events: List<AssistantEvent>,
 )
 
+data class CelesteNotification(
+    val id: String,
+    val source: String,
+    val kind: String,
+    val title: String,
+    val detail: String,
+    val createdAt: String,
+    val seen: Boolean,
+    val messageId: String? = null,
+)
+
 class CelesteApi(private val config: CelesteConfig) {
 
     fun getStatus(): CoreStatus {
@@ -113,6 +124,36 @@ class CelesteApi(private val config: CelesteConfig) {
         return parseAssistantEvent(json)
     }
 
+    fun listNotifications(limit: Int = 20): List<CelesteNotification> {
+        val text = requestText(
+            "/api/v1/notifications?limit=$limit",
+            "GET",
+            authenticated = true,
+        )
+        val array = JSONArray(text)
+        return (0 until array.length()).map { index ->
+            parseNotification(array.getJSONObject(index))
+        }
+    }
+
+    fun markNotificationSeen(notificationId: String) {
+        val encoded = URLEncoder.encode(notificationId, StandardCharsets.UTF_8.toString())
+        request(
+            "/api/v1/notifications/$encoded/seen",
+            "POST",
+            authenticated = true,
+        )
+    }
+
+    fun dismissNotification(notificationId: String) {
+        val encoded = URLEncoder.encode(notificationId, StandardCharsets.UTF_8.toString())
+        request(
+            "/api/v1/notifications/$encoded",
+            "DELETE",
+            authenticated = true,
+        )
+    }
+
     fun createNote(
         title: String,
         content: String,
@@ -201,6 +242,20 @@ class CelesteApi(private val config: CelesteConfig) {
             status = json.getString("status"),
             confirmationId = confirmationId,
             summary = summary,
+        )
+    }
+
+    private fun parseNotification(json: JSONObject): CelesteNotification {
+        val metadata = json.optJSONObject("metadata") ?: JSONObject()
+        return CelesteNotification(
+            id = json.getString("id"),
+            source = json.getString("source"),
+            kind = json.getString("kind"),
+            title = json.getString("title"),
+            detail = json.getString("detail"),
+            createdAt = json.getString("created_at"),
+            seen = json.optBoolean("seen", false),
+            messageId = metadata.optString("message_id").takeIf { it.isNotBlank() },
         )
     }
 
