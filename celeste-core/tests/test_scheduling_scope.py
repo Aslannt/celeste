@@ -26,12 +26,16 @@ def test_relative_scheduling_language_exposes_tools():
 def test_scheduling_tool_schema_includes_current_clock(tmp_path, monkeypatch):
     router = _router(tmp_path, monkeypatch)
     view = scope_router_for_message(router, "Recuérdame mañana a las 8 comprar leche")
-    reminder = next(
-        schema for schema in view.tool_schemas() if schema["name"] == "create_reminder"
-    )
+    schemas = view.tool_schemas()
+    reminder = next(schema for schema in schemas if schema["name"] == "create_reminder")
+    note = next(schema for schema in schemas if schema["name"] == "create_note")
 
     description = reminder["description"]
     assert "current local date/time is" in description
     assert "America/Bogota" in description
     assert "ISO-8601" in description
     assert "today/tomorrow" in description
+
+    note_description = note["description"]
+    assert "use create_reminder instead of create_note" in note_description
+    assert "Brain note is not a scheduled notification" in note_description
