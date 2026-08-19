@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.config import Settings
 from app.security import require_token
+from app.services.calendar import GoogleCalendarClient
 from app.services.gmail import GmailClient, GmailError
 from app.services.gmail_monitor import GmailMonitor
 from app.services.notifications import NotificationStoreError
@@ -43,3 +44,13 @@ def poll_gmail() -> dict[str, int]:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/calendar/status")
+def calendar_status() -> dict[str, object]:
+    settings = Settings.from_env()
+    client = GoogleCalendarClient(
+        settings.calendar_credentials_file,
+        settings.calendar_token_file,
+    )
+    return client.status(enabled=settings.calendar_enabled)
