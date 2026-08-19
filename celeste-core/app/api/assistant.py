@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field
 from app.config import Settings
 from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
+from app.services.fast_paths import try_ollama_fast_path
+from app.services.llm_tool_scope import scope_router_for_message
+from app.services.response_guard import guard_memory_reply, sanitize_public_events
 from app.services.tools import ToolRouter
 
 
@@ -28,6 +31,7 @@ class AssistantChatResponse(BaseModel):
     reply: str
     provider: str
     events: list[ToolEventResponse] = Field(default_factory=list)
+    performance: dict[str, Any] | None = None
 
 
 class PendingConfirmationResponse(BaseModel):
@@ -71,16 +75,41 @@ def list_tool_audit(
 def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
     settings = Settings.from_env()
     router_service = ToolRouter(settings)
+
+    fast_path = try_ollama_fast_path(payload.message, router_service, settings)
+    if fast_path is not None:
+        return AssistantChatResponse.model_validate(fast_path.to_dict())
+
+    provider_router = (
+        scope_router_for_message(router_service, payload.message)
+        if settings.llm_provider == "ollama"
+        else router_service
+    )
+
     try:
         provider = build_provider(settings)
-        result = provider.answer(payload.message, router_service)
+        result = provider.answer(payload.message, provider_router)
     except AIProviderError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
 
-    return AssistantChatResponse.model_validate(result.to_dict())
+    result_dict = result.to_dict()
+    guarded_reply, guarded = guard_memory_reply(
+        payload.message,
+        result.reply,
+        result.events,
+    )
+    if guarded:
+        result_dict["reply"] = guarded_reply
+        performance = result_dict.get("performance")
+        guarded_performance = dict(performance) if isinstance(performance, dict) else {}
+        guarded_performance["response_guard"] = "memory_grounding"
+        result_dict["performance"] = guarded_performance
+
+    result_dict["events"] = sanitize_public_events(result_dict.get("events"))
+    return AssistantChatResponse.model_validate(result_dict)
 
 
 @router.post("/confirm/{confirmation_id}", response_model=ToolEventResponse)

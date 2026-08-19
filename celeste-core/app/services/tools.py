@@ -181,20 +181,35 @@ class ToolRouter:
         self.register(
             ToolSpec(
                 name="create_note",
-                description="Create a durable Markdown note in Celeste Brain.",
+                description=(
+                    "Create a durable Markdown note in Celeste Brain. This is a SAFE_WRITE: when "
+                    "the user clearly asks Celeste to remember, save or note something, call this "
+                    "tool directly without asking for confirmation. Infer a concise title from the "
+                    "user's content; type and tags are optional metadata that Celeste may infer."
+                ),
                 risk=ToolRisk.SAFE_WRITE,
                 parameters={
                     "type": "object",
                     "properties": {
-                        "title": {"type": "string"},
-                        "content": {"type": "string"},
+                        "title": {
+                            "type": "string",
+                            "description": "Concise title inferred from the user's content.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The durable information the user asked Celeste to save.",
+                        },
                         "type": {
                             "type": "string",
                             "enum": ["note", "task", "memory", "project"],
+                            "description": "Optional classification. Use note unless another type is clearly better.",
+                            "default": "note",
                         },
                         "tags": {
                             "type": "array",
                             "items": {"type": "string"},
+                            "description": "Optional short tags inferred from the content; may be empty.",
+                            "default": [],
                         },
                     },
                     "required": ["title", "content"],
@@ -452,7 +467,7 @@ class ToolRouter:
                     tool=pending.tool,
                     risk=ToolRisk.RESTRICTED,
                     status="denied",
-                    summary="Pending action is no longer available.",
+                    summary="La acción pendiente ya no está disponible.",
                 )
             )
         return self._finish(self._run(spec, pending.arguments))
@@ -468,7 +483,7 @@ class ToolRouter:
                 tool=pending.tool,
                 risk=risk,
                 status="cancelled",
-                summary="Action cancelled by the user.",
+                summary="Acción cancelada por el usuario.",
             )
         )
 
@@ -480,11 +495,11 @@ class ToolRouter:
 
     def _confirmation_summary(self, spec: ToolSpec, arguments: dict[str, Any]) -> str:
         if spec.confirmation_summary is None:
-            return f"Celeste wants to run {spec.name}."
+            return f"Celeste quiere ejecutar {spec.name}."
         try:
             return spec.confirmation_summary(arguments)
         except Exception:
-            return f"Celeste wants to run {spec.name}."
+            return f"Celeste quiere ejecutar {spec.name}."
 
     def _run(self, spec: ToolSpec, arguments: dict[str, Any]) -> ToolExecution:
         try:
@@ -597,14 +612,24 @@ class ToolRouter:
     def _summarize_update_note(self, arguments: dict[str, Any]) -> str:
         note_id = str(arguments.get("note_id", "")).strip()
         note = self.storage.get(note_id)
-        changed_fields = [key for key in ("title", "content", "type", "tags") if key in arguments]
-        fields = ", ".join(changed_fields) or "unknown fields"
-        return f"Modify note '{note.title}' ({fields})."
+        field_labels = {
+            "title": "título",
+            "content": "contenido",
+            "type": "tipo",
+            "tags": "etiquetas",
+        }
+        changed_fields = [
+            field_labels[key]
+            for key in ("title", "content", "type", "tags")
+            if key in arguments
+        ]
+        fields = ", ".join(changed_fields) or "campos no especificados"
+        return f"Modificar la nota '{note.title}' ({fields})."
 
     def _summarize_delete_note(self, arguments: dict[str, Any]) -> str:
         note_id = str(arguments.get("note_id", "")).strip()
         note = self.storage.get(note_id)
-        return f"Soft-delete note '{note.title}'."
+        return f"Eliminar de forma reversible la nota '{note.title}'."
 
     def _sync_index(self, note) -> None:
         try:

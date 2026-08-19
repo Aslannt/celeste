@@ -287,3 +287,38 @@ def test_gmail_status_endpoint_does_not_expose_tokens(tmp_path, monkeypatch):
     assert body["credentials_present"] is True
     assert body["authorized"] is False
     assert "token" not in body
+
+def test_changed_gmail_draft_after_confirmation_is_not_sent(tmp_path, monkeypatch):
+    settings = _configure(tmp_path, monkeypatch, enabled=True)
+    service = FakeService()
+    router = ToolRouter(settings)
+
+    assert router.gmail is not None
+    router.gmail._service = lambda: service  # type: ignore[method-assign]
+
+    pending = router.execute(
+        "gmail_send_draft",
+        {"draft_id": "draft-1"},
+    )
+
+    assert pending.status == "confirmation_required"
+    assert pending.confirmation_id is not None
+    assert service.drafts_api.sent_ids == []
+
+    # Simulate an external/manual edit after the user reviewed the draft.
+    # Changing the RAW representation must invalidate the stored fingerprint.
+    service.drafts_api.draft_metadata_message["raw"] = _b64(
+        "To: otro-destino@example.com\r\n"
+        "Subject: Asunto modificado\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n"
+        "\r\n"
+        "Este contenido cambio despues de pedir confirmacion."
+    )
+
+    confirmed = router.confirm(pending.confirmation_id)
+
+    assert confirmed is not None
+    assert confirmed.status == "error"
+    assert "changed after confirmation" in (confirmed.summary or "").lower()
+    assert service.drafts_api.sent_ids == []
+

@@ -149,6 +149,67 @@ def test_search_finds_title_content_and_tags(tmp_path, monkeypatch):
     assert (brain / ".celeste" / "brain-index.sqlite3").exists()
 
 
+def test_search_keeps_strict_matches_precise(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+
+    with TestClient(app) as client:
+        client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Aceite de la moto",
+                "content": "Revisar nivel de aceite.",
+                "tags": ["moto"],
+            },
+        )
+        client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Casco de la moto",
+                "content": "Revisar la visera.",
+                "tags": ["moto"],
+            },
+        )
+
+        response = client.get("/api/v1/notes/search?q=moto%20aceite", headers=HEADERS)
+
+    assert response.status_code == 200
+    assert [note["title"] for note in response.json()] == ["Aceite de la moto"]
+
+
+def test_search_relaxes_natural_language_when_strict_match_is_empty(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+
+    with TestClient(app) as client:
+        client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Revisar aceite de la moto",
+                "content": "Tengo que revisar el aceite de la moto.",
+                "tags": ["moto", "mantenimiento"],
+            },
+        )
+        client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Comprar cafe",
+                "content": "Comprar cafe para la cocina.",
+                "tags": ["compras"],
+            },
+        )
+
+        response = client.get(
+            "/api/v1/notes/search?q=algo%20pendiente%20con%20la%20moto",
+            headers=HEADERS,
+        )
+
+    assert response.status_code == 200
+    assert [note["title"] for note in response.json()] == ["Revisar aceite de la moto"]
+
+
 def test_search_index_tracks_update_and_delete(tmp_path, monkeypatch):
     _configure(tmp_path, monkeypatch)
 
