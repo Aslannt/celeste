@@ -1,4 +1,4 @@
-from app.services.response_guard import guard_memory_reply
+from app.services.response_guard import guard_memory_reply, sanitize_public_events
 from app.services.tools import ToolExecution, ToolRisk
 
 
@@ -93,3 +93,25 @@ def test_guard_does_not_replace_mutation_or_confirmation_flows():
 
     assert guarded is False
     assert reply == original
+
+
+def test_public_event_sanitizer_removes_provider_only_context():
+    events = [
+        {
+            "tool": "search_memory",
+            "risk": "READ",
+            "status": "executed",
+            "output": [
+                {
+                    "id": "1",
+                    "title": "nota",
+                    "_celeste_context": "provider-only",
+                }
+            ],
+        }
+    ]
+
+    sanitized = sanitize_public_events(events)
+
+    assert sanitized[0]["output"][0] == {"id": "1", "title": "nota"}
+    assert "_celeste_context" in events[0]["output"][0]
