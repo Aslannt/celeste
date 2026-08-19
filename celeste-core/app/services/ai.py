@@ -51,9 +51,59 @@ Keep answers concise and useful.
 """
 
 
+_EXPLICIT_CREATE_PATTERNS = [
+    re.compile(r"^\s*(?:recuerda|guarda|anota)\s+que\s+(.+?)\s*$", re.IGNORECASE | re.DOTALL),
+    re.compile(r"^\s*(?:acu[eé]rdate)\s+(?:de\s+)?que\s+(.+?)\s*$", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r"^\s*crea\s+(?:una\s+)?nota(?:\s+que\s+diga|\s+sobre)?\s+(.+?)\s*$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+]
+
+
 def _plain(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
     return "".join(char for char in decomposed if not unicodedata.combining(char)).casefold().strip()
+
+
+def _explicit_create_arguments(message: str) -> dict[str, Any] | None:
+    text = message.strip()
+    for pattern in _EXPLICIT_CREATE_PATTERNS:
+        match = pattern.match(text)
+        if not match:
+            continue
+        content = match.group(1).strip()
+        if not content:
+            return None
+        first_line = content.splitlines()[0].strip()
+        title = first_line.split(".", 1)[0].strip()[:100] or "Nota de Celeste"
+        return {
+            "title": title,
+            "content": content,
+            "type": "note",
+            "tags": ["assistant"],
+        }
+    return None
+
+
+def _explicit_create_fallback(
+    message: str,
+    router: ToolRouter,
+    provider: str,
+) -> AssistantResult | None:
+    arguments = _explicit_create_arguments(message)
+    if arguments is None:
+        return None
+
+    event = router.execute("create_note", arguments)
+    if event.status == "executed":
+        output = event.output if isinstance(event.output, dict) else {}
+        title = str(output.get("title") or arguments["title"])
+        reply = f"Listo. Guarde '{title}' en Celeste Brain."
+    else:
+        reply = "No pude guardar la nota en Celeste Brain."
+
+    return AssistantResult(reply=reply, provider=provider, events=[event])
 
 
 def _confirmation_reply(events: list[ToolExecution]) -> str:
@@ -196,6 +246,10 @@ class OpenAIProvider:
         for _ in range(4):
             calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
             if not calls:
+                if not events:
+                    fallback = _explicit_create_fallback(message, router, self.name)
+                    if fallback is not None:
+                        return fallback
                 reply = (response.output_text or "").strip()
                 if not reply:
                     reply = "No obtuve una respuesta de texto del proveedor."
@@ -293,6 +347,10 @@ class OllamaProvider:
 
             content = str(raw_message.get("content") or "").strip()
             if not raw_calls:
+                if not events:
+                    fallback = _explicit_create_fallback(message, router, self.name)
+                    if fallback is not None:
+                        return fallback
                 return AssistantResult(
                     reply=content or "No obtuve una respuesta de texto del proveedor local.",
                     provider=self.name,
