@@ -9,6 +9,7 @@ from app.config import Settings
 from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
 from app.services.fast_paths import try_ollama_fast_path
+from app.services.llm_tool_scope import scope_router_for_message
 from app.services.tools import ToolRouter
 
 
@@ -78,9 +79,15 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
     if fast_path is not None:
         return AssistantChatResponse.model_validate(fast_path.to_dict())
 
+    provider_router = (
+        scope_router_for_message(router_service, payload.message)
+        if settings.llm_provider == "ollama"
+        else router_service
+    )
+
     try:
         provider = build_provider(settings)
-        result = provider.answer(payload.message, router_service)
+        result = provider.answer(payload.message, provider_router)
     except AIProviderError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
