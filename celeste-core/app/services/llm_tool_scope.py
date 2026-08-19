@@ -9,10 +9,9 @@ from app.services.tools import ToolRouter
 
 # This selector is deliberately conservative. A false positive only costs prompt
 # tokens by keeping tools available; a false negative could prevent Celeste from
-# consulting durable memory. Therefore any personal-memory/action cue keeps the
-# complete tool catalog exposed to the LLM.
+# consulting durable memory. Cues should therefore describe Celeste capabilities
+# or personal context, not generic concepts such as computer "memoria RAM".
 _TOOL_CUES = (
-    "memoria",
     "brain",
     "nota",
     "notas",
@@ -26,6 +25,8 @@ _TOOL_CUES = (
     "tareas",
     "guarda",
     "guardar",
+    "guardado",
+    "guardaste",
     "anota",
     "anotar",
     "borra",
@@ -52,6 +53,13 @@ _TOOL_CUES = (
     "ultima vez",
 )
 
+_PERSONAL_MEMORY_PATTERNS = (
+    re.compile(r"\b(?:mi|tu) memoria\b"),
+    re.compile(r"\bmemoria (?:personal|de celeste|del asistente)\b"),
+    re.compile(r"\b(?:busca|revisa|consulta|mira)\b.{0,48}\bmemoria\b"),
+    re.compile(r"\b(?:que|qué) (?:tienes|hay) (?:en )?(?:tu |mi )?memoria\b"),
+)
+
 
 def _plain(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
@@ -61,6 +69,8 @@ def _plain(value: str) -> str:
 
 def message_needs_tool_catalog(message: str) -> bool:
     text = _plain(message)
+    if any(pattern.search(text) for pattern in _PERSONAL_MEMORY_PATTERNS):
+        return True
     return any(cue in text for cue in _TOOL_CUES)
 
 
