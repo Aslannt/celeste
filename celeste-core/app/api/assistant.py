@@ -28,6 +28,7 @@ class AssistantChatResponse(BaseModel):
     reply: str
     provider: str
     events: list[ToolEventResponse] = Field(default_factory=list)
+    performance: dict[str, Any] | None = None
 
 
 class PendingConfirmationResponse(BaseModel):
