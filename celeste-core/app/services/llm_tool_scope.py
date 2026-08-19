@@ -109,6 +109,13 @@ _SEARCH_MEMORY_RESULT_CONTEXT = (
     "do not invent technical or domain facts."
 )
 
+_CREATE_NOTE_SCHEDULING_SUFFIX = (
+    " If create_reminder is available and the user asks to be alerted/notified at a future "
+    "date or time, use create_reminder instead of create_note. A Brain note is not a scheduled "
+    "notification. Use create_note only when the user wants information remembered without a "
+    "guaranteed future alert."
+)
+
 _SCHEDULING_TOOLS = {
     "create_reminder",
     "list_reminders",
@@ -165,6 +172,7 @@ class ToolSchemaView:
             return []
 
         scheduling_context = _scheduling_context(self._router)
+        reminder_available = self._router.has_tool("create_reminder")
         schemas: list[dict[str, Any]] = []
         for schema in self._router.tool_schemas():
             decorated = dict(schema)
@@ -173,6 +181,11 @@ class ToolSchemaView:
                 decorated["description"] = (
                     str(decorated.get("description") or "")
                     + _SEARCH_MEMORY_HONESTY_SUFFIX
+                )
+            if name == "create_note" and reminder_available:
+                decorated["description"] = (
+                    str(decorated.get("description") or "")
+                    + _CREATE_NOTE_SCHEDULING_SUFFIX
                 )
             if name in _SCHEDULING_TOOLS:
                 decorated["description"] = (
