@@ -4,7 +4,7 @@ import re
 import unicodedata
 from typing import Any
 
-from app.services.tools import ToolRouter
+from app.services.tools import ToolExecution, ToolRouter
 
 
 # This selector is deliberately conservative. A false positive only costs prompt
@@ -68,6 +68,13 @@ _SEARCH_MEMORY_HONESTY_SUFFIX = (
     "present in the retrieved results; do not invent technical or domain facts."
 )
 
+_SEARCH_MEMORY_RESULT_CONTEXT = (
+    "All search results are stored notes/tasks only, not schedules. Never describe them as "
+    "scheduled/programmed reminders or claim a notification will occur. If prioritizing or "
+    "giving advice, use only facts present in the retrieved title/content/tags; do not invent "
+    "technical or domain facts."
+)
+
 
 def _plain(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
@@ -110,7 +117,29 @@ class ToolSchemaView:
         return schemas
 
     def execute(self, name: str, arguments: dict[str, Any]):
-        return self._router.execute(name, arguments)
+        execution = self._router.execute(name, arguments)
+        if (
+            name != "search_memory"
+            or execution.status != "executed"
+            or not isinstance(execution.output, list)
+            or not execution.output
+        ):
+            return execution
+
+        output: list[Any] = [dict(item) if isinstance(item, dict) else item for item in execution.output]
+        for item in output:
+            if isinstance(item, dict):
+                item["_celeste_context"] = _SEARCH_MEMORY_RESULT_CONTEXT
+                break
+
+        return ToolExecution(
+            tool=execution.tool,
+            risk=execution.risk,
+            status=execution.status,
+            output=output,
+            confirmation_id=execution.confirmation_id,
+            summary=execution.summary,
+        )
 
     def __getattr__(self, name: str):
         return getattr(self._router, name)
