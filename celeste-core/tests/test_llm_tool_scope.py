@@ -74,7 +74,32 @@ def test_search_memory_schema_does_not_present_notes_as_schedules(tmp_path, monk
     description = scoped_search["description"]
     assert "stored notes/tasks, not schedules" in description
     assert "scheduling tool is available" in description
+    assert "do not invent technical or domain facts" in description
     assert "stored notes/tasks, not schedules" not in original_search["description"]
+
+
+def test_search_memory_execution_adds_provider_grounding_context(tmp_path, monkeypatch):
+    router = _router(tmp_path, monkeypatch)
+    created = router.execute(
+        "create_note",
+        {
+            "title": "Recordatorio: revisar llantas el sabado",
+            "content": "El proximo sabado debo revisar la presion de las llantas.",
+            "type": "task",
+            "tags": ["recordatorio", "moto"],
+        },
+    )
+    assert created.status == "executed"
+
+    view = scope_router_for_message(router, "Revisa lo que recuerdas sobre la moto")
+    event = view.execute("search_memory", {"query": "moto llantas", "limit": 5})
+
+    assert event.status == "executed"
+    assert isinstance(event.output, list)
+    assert event.output
+    context = event.output[0]["_celeste_context"].lower()
+    assert "stored notes/tasks only, not schedules" in context
+    assert "do not invent technical or domain facts" in context
 
 
 def test_schema_view_still_delegates_real_tool_execution(tmp_path, monkeypatch):
