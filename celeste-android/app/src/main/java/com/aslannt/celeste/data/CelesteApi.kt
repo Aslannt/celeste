@@ -32,6 +32,7 @@ data class CelesteNotification(
     val createdAt: String,
     val seen: Boolean,
     val messageId: String? = null,
+    val reminderId: String? = null,
 )
 
 class CelesteApi(private val config: CelesteConfig) {
@@ -62,6 +63,87 @@ class CelesteApi(private val config: CelesteConfig) {
             authenticated = true,
         )
         return parseNotes(text)
+    }
+
+    fun listReminders(limit: Int = 100): List<Reminder> {
+        val text = requestText(
+            "/api/v1/reminders?limit=$limit",
+            "GET",
+            authenticated = true,
+        )
+        val array = JSONArray(text)
+        return (0 until array.length()).map { index ->
+            parseReminder(array.getJSONObject(index))
+        }
+    }
+
+    fun createReminder(
+        title: String,
+        dueAt: String,
+        message: String? = null,
+        timeZone: String? = null,
+    ): Reminder {
+        val body = JSONObject().apply {
+            put("title", title)
+            put("due_at", dueAt)
+            if (!message.isNullOrBlank()) put("message", message)
+            if (!timeZone.isNullOrBlank()) put("time_zone", timeZone)
+        }
+        return parseReminder(
+            request(
+                "/api/v1/reminders",
+                "POST",
+                authenticated = true,
+                body = body.toString(),
+            )
+        )
+    }
+
+    fun completeReminder(reminderId: String): Reminder {
+        val encoded = URLEncoder.encode(reminderId, StandardCharsets.UTF_8.toString())
+        return parseReminder(
+            request(
+                "/api/v1/reminders/$encoded/done",
+                "POST",
+                authenticated = true,
+            )
+        )
+    }
+
+    fun cancelReminder(reminderId: String): Reminder {
+        val encoded = URLEncoder.encode(reminderId, StandardCharsets.UTF_8.toString())
+        return parseReminder(
+            request(
+                "/api/v1/reminders/$encoded/cancel",
+                "POST",
+                authenticated = true,
+            )
+        )
+    }
+
+    fun listCalendarEvents(
+        timeMin: String? = null,
+        timeMax: String? = null,
+        limit: Int = 20,
+    ): List<CalendarEvent> {
+        val query = buildList {
+            add("limit=${limit.coerceIn(1, 20)}")
+            if (!timeMin.isNullOrBlank()) {
+                add("time_min=${URLEncoder.encode(timeMin, StandardCharsets.UTF_8.toString())}")
+            }
+            if (!timeMax.isNullOrBlank()) {
+                add("time_max=${URLEncoder.encode(timeMax, StandardCharsets.UTF_8.toString())}")
+            }
+        }.joinToString("&")
+        val text = requestText(
+            "/api/v1/integrations/calendar/events?$query",
+            "GET",
+            authenticated = true,
+        )
+        val array = JSONArray(text)
+        return (0 until array.length()).map { index ->
+            parseCalendarEvent(array.getJSONObject(index))
+        }
     }
 
     fun askCeleste(message: String): AssistantReply {
@@ -256,6 +338,34 @@ class CelesteApi(private val config: CelesteConfig) {
             createdAt = json.getString("created_at"),
             seen = json.optBoolean("seen", false),
             messageId = metadata.optString("message_id").takeIf { it.isNotBlank() },
+            reminderId = metadata.optString("reminder_id").takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun parseReminder(json: JSONObject): Reminder = Reminder(
+        id = json.getString("id"),
+        title = json.getString("title"),
+        message = json.optString("message"),
+        dueAt = json.getString("due_at"),
+        createdAt = json.getString("created_at"),
+        firedAt = json.optNullableString("fired_at"),
+        doneAt = json.optNullableString("done_at"),
+        cancelledAt = json.optNullableString("cancelled_at"),
+    )
+
+    private fun parseCalendarEvent(json: JSONObject): CalendarEvent {
+        val attendeesJson = json.optJSONArray("attendees") ?: JSONArray()
+        return CalendarEvent(
+            id = json.getString("id"),
+            summary = json.optString("summary"),
+            description = json.optString("description"),
+            location = json.optString("location"),
+            status = json.optString("status"),
+            start = json.optString("start"),
+            end = json.optString("end"),
+            timeZone = json.optString("time_zone"),
+            organizer = json.optString("organizer"),
+            attendees = (0 until attendeesJson.length()).map { attendeesJson.getString(it) },
         )
     }
 
@@ -278,5 +388,10 @@ class CelesteApi(private val config: CelesteConfig) {
             version = json.getInt("version"),
             deleted = json.optBoolean("deleted", false),
         )
+    }
+
+    private fun JSONObject.optNullableString(name: String): String? {
+        if (isNull(name)) return null
+        return optString(name).takeIf { it.isNotBlank() }
     }
 }
