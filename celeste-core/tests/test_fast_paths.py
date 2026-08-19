@@ -105,6 +105,44 @@ def test_explicit_memory_search_skips_ollama_and_returns_brain_results(tmp_path,
     assert body["performance"]["ollama_rounds"] == []
 
 
+def test_natural_recall_question_skips_ollama_and_returns_brain_results(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    monkeypatch.setattr(assistant_api, "build_provider", _forbid_model_build)
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/notes",
+            headers=HEADERS,
+            json={
+                "title": "Revisar aceite de la moto",
+                "content": "Tengo que revisar el aceite de la moto.",
+                "tags": ["moto"],
+            },
+        )
+        assert created.status_code == 201
+
+        response = client.post(
+            "/api/v1/assistant/chat",
+            headers=HEADERS,
+            json={
+                "message": (
+                    "¿No te había dicho que tenía algo pendiente con la moto? "
+                    "Revisa si recuerdas algo."
+                )
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "core_fast_path"
+    assert body["events"][0]["tool"] == "search_memory"
+    assert body["events"][0]["status"] == "executed"
+    assert "Revisar aceite de la moto" in body["reply"]
+    assert body["performance"]["model_used"] is False
+    assert body["performance"]["fast_path"] == "search_memory"
+    assert body["performance"]["ollama_rounds"] == []
+
+
 def test_search_fast_path_refuses_mutating_request(tmp_path, monkeypatch):
     _configure(tmp_path, monkeypatch)
     settings = Settings.from_env()
@@ -112,6 +150,23 @@ def test_search_fast_path_refuses_mutating_request(tmp_path, monkeypatch):
 
     result = try_ollama_fast_path(
         "Busca la nota temporal de confirmaciones V04 y eliminala.",
+        router,
+        settings,
+    )
+
+    assert result is None
+
+
+def test_natural_recall_fast_path_refuses_mutating_request(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    result = try_ollama_fast_path(
+        (
+            "¿No te había dicho que quería eliminar la nota de la moto? "
+            "Revisa si recuerdas algo."
+        ),
         router,
         settings,
     )
