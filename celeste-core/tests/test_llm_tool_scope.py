@@ -60,6 +60,23 @@ def test_personal_memory_cues_keep_full_tool_catalog(tmp_path, monkeypatch):
         assert {schema["name"] for schema in view.tool_schemas()} == expected_names
 
 
+def test_search_memory_schema_does_not_present_notes_as_schedules(tmp_path, monkeypatch):
+    router = _router(tmp_path, monkeypatch)
+    view = scope_router_for_message(router, "Consulta tu memoria sobre la moto.")
+
+    scoped_search = next(
+        schema for schema in view.tool_schemas() if schema["name"] == "search_memory"
+    )
+    original_search = next(
+        schema for schema in router.tool_schemas() if schema["name"] == "search_memory"
+    )
+
+    description = scoped_search["description"]
+    assert "stored notes/tasks, not schedules" in description
+    assert "scheduling tool is available" in description
+    assert "stored notes/tasks, not schedules" not in original_search["description"]
+
+
 def test_schema_view_still_delegates_real_tool_execution(tmp_path, monkeypatch):
     router = _router(tmp_path, monkeypatch)
     view = scope_router_for_message(router, "Cual es el estado del PC?")
