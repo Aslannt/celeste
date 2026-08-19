@@ -14,6 +14,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aslannt.celeste.data.*
 import com.aslannt.celeste.data.local.PendingNoteEntity
+import com.aslannt.celeste.ui.CelesteBackdrop
+import com.aslannt.celeste.ui.CelesteCard
+import com.aslannt.celeste.ui.CelesteHero
+import com.aslannt.celeste.ui.SectionHeading
 import com.aslannt.celeste.ui.theme.CelesteTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -131,27 +135,22 @@ private fun CelesteScreen() {
         }
     }
 
-    // Refresh the local notice feed while the app is active. Core is responsible
-    // for any optional Gmail polling; Android never receives Google credentials.
     LaunchedEffect(Unit) {
         while (true) {
             delay(30_000)
             val current = store.load()
             if (current.coreBaseUrl.isNotBlank()) {
                 try {
-                    val latest = withContext(Dispatchers.IO) {
+                    notifications = withContext(Dispatchers.IO) {
                         CelesteApi(current).listNotifications()
                     }
-                    notifications = latest
                 } catch (_: Exception) {
-                    // Notices are best-effort. Existing UI state remains visible.
+                    // Notices are best-effort. Existing state remains visible.
                 }
             }
         }
     }
 
-    // While there are pending notes, retry periodically. The queue itself is
-    // durable in Room, so closing or restarting the app never discards a note.
     LaunchedEffect(pendingNotes.size) {
         if (pendingNotes.isEmpty()) return@LaunchedEffect
 
@@ -166,17 +165,16 @@ private fun CelesteScreen() {
                 val api = CelesteApi(current)
                 try {
                     val status = withContext(Dispatchers.IO) { api.getStatus() }
-                    val remoteNotes = withContext(Dispatchers.IO) { api.listNotes() }
+                    notes = withContext(Dispatchers.IO) { api.listNotes() }
                     statusText = if (status.status == "online") "En linea" else status.status
                     hostname = status.hostname
-                    notes = remoteNotes
                     message = if (remaining.isEmpty()) {
                         "Celeste Core volvio. Sincronizadas ${sync.syncedCount} nota(s) pendientes."
                     } else {
                         "Sincronizadas ${sync.syncedCount} nota(s). Quedan ${remaining.size} pendientes."
                     }
                 } catch (_: Exception) {
-                    // The queue is already safe in Room. A later retry will refresh the UI.
+                    // The Room queue is durable; a later retry refreshes the UI.
                 }
             }
 
@@ -184,366 +182,546 @@ private fun CelesteScreen() {
         }
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Celeste") }) },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .padding(16.dp)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("PC", fontWeight = FontWeight.Bold)
-                    Text("Estado: $statusText")
-                    if (hostname.isNotBlank()) Text(hostname)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            enabled = !busy,
-                            onClick = {
-                                runIo {
-                                    val c = store.load()
-                                    require(c.pcMac.isNotBlank()) { "Configura la MAC del PC." }
-                                    require(c.broadcastAddress.isNotBlank()) { "Configura la direccion broadcast." }
-                                    withContext(Dispatchers.IO) {
-                                        WakeOnLan.send(c.pcMac, c.broadcastAddress, c.wolPort)
+    CelesteBackdrop {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0f),
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                "CELESTE",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                "Local intelligence",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.86f),
+                    ),
+                )
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CelesteHero(
+                    statusText = statusText,
+                    hostname = hostname,
+                    pendingCount = pendingNotes.size + pendingAssistantActions.size,
+                    notificationCount = notifications.size,
+                )
+
+                if (busy) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+
+                if (message.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                    ) {
+                        Text(
+                            message,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+
+                CelesteCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SectionHeading(
+                            title = "Core & dispositivo",
+                            subtitle = "Control local del PC y conexion con Celeste Core.",
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                enabled = !busy,
+                                onClick = {
+                                    runIo {
+                                        val c = store.load()
+                                        require(c.pcMac.isNotBlank()) { "Configura la MAC del PC." }
+                                        require(c.broadcastAddress.isNotBlank()) { "Configura la direccion broadcast." }
+                                        withContext(Dispatchers.IO) {
+                                            WakeOnLan.send(c.pcMac, c.broadcastAddress, c.wolPort)
+                                        }
+                                        message = "Magic Packet enviado"
                                     }
-                                    message = "Magic Packet enviado"
+                                },
+                            ) { Text("Encender PC") }
+                            OutlinedButton(enabled = !busy, onClick = { refresh() }) {
+                                Text("Actualizar")
+                            }
+                        }
+                        TextButton(onClick = { showSettings = !showSettings }) {
+                            Text(if (showSettings) "Ocultar configuracion" else "Configuracion local")
+                        }
+                    }
+                }
+
+                if (showSettings) {
+                    SettingsCard(
+                        config = config,
+                        onConfigChange = { config = it },
+                        onSave = {
+                            store.save(config)
+                            message = "Configuracion guardada"
+                        },
+                    )
+                }
+
+                CelesteCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SectionHeading(
+                            title = "Hablar con Celeste",
+                            subtitle = "Pregunta, recuerda o ejecuta herramientas con permisos controlados.",
+                        )
+                        OutlinedTextField(
+                            value = assistantInput,
+                            onValueChange = { assistantInput = it },
+                            placeholder = { Text("¿Qué necesitas?") },
+                            minLines = 3,
+                            maxLines = 8,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                        )
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !busy && assistantInput.isNotBlank(),
+                            onClick = {
+                                val prompt = assistantInput.trim()
+                                runIo {
+                                    val api = CelesteApi(store.load())
+                                    val result = withContext(Dispatchers.IO) {
+                                        api.askCeleste(prompt)
+                                    }
+                                    assistantReply = result.reply
+                                    assistantProvider = result.provider
+                                    assistantEvents = result.events
+                                    assistantInput = ""
+                                    loadAssistantConfirmations(api)
+                                    message = "Respuesta de Celeste"
+
+                                    if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
+                                        try {
+                                            notes = withContext(Dispatchers.IO) { api.listNotes() }
+                                        } catch (_: Exception) {
+                                            // The assistant tool already confirmed the note write.
+                                        }
+                                    }
                                 }
                             },
-                        ) { Text("Encender PC") }
-                        OutlinedButton(enabled = !busy, onClick = { refresh() }) { Text("Actualizar") }
+                        ) { Text("Enviar a Celeste") }
+
+                        if (assistantReply.isNotBlank()) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+                            ) {
+                                Column(
+                                    Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(assistantReply, style = MaterialTheme.typography.bodyLarge)
+                                    if (assistantProvider.isNotBlank()) {
+                                        Text(
+                                            "Proveedor · $assistantProvider",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    if (assistantEvents.isNotEmpty()) {
+                                        Text(
+                                            assistantEvents.joinToString("  ·  ") {
+                                                "${it.tool} ${it.status}"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (pendingAssistantActions.isNotEmpty()) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(
+                                "Requiere tu confirmacion",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            pendingAssistantActions.forEach { action ->
+                                val confirmationId = action.confirmationId
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.48f),
+                                ) {
+                                    Column(
+                                        Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Text(action.summary ?: action.tool)
+                                        Text(
+                                            "${action.tool} · ${action.risk}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(
+                                                enabled = !busy && confirmationId != null,
+                                                onClick = {
+                                                    if (confirmationId != null) {
+                                                        runIo {
+                                                            val api = CelesteApi(store.load())
+                                                            val result = withContext(Dispatchers.IO) {
+                                                                api.confirmAssistantAction(confirmationId)
+                                                            }
+                                                            assistantEvents = assistantEvents + result
+                                                            loadAssistantConfirmations(api)
+                                                            if (result.status == "executed") {
+                                                                message = "Accion confirmada: ${result.tool}"
+                                                                if (result.tool in setOf("update_note", "delete_note", "create_note")) {
+                                                                    notes = withContext(Dispatchers.IO) { api.listNotes() }
+                                                                }
+                                                            } else {
+                                                                message = result.summary ?: "La accion no se pudo ejecutar."
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                            ) { Text("Confirmar") }
+                                            OutlinedButton(
+                                                enabled = !busy && confirmationId != null,
+                                                onClick = {
+                                                    if (confirmationId != null) {
+                                                        runIo {
+                                                            val api = CelesteApi(store.load())
+                                                            val result = withContext(Dispatchers.IO) {
+                                                                api.cancelAssistantAction(confirmationId)
+                                                            }
+                                                            assistantEvents = assistantEvents + result
+                                                            loadAssistantConfirmations(api)
+                                                            message = "Accion cancelada: ${result.tool}"
+                                                        }
+                                                    }
+                                                },
+                                            ) { Text("Cancelar") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            OutlinedButton(onClick = { showSettings = !showSettings }) {
-                Text(if (showSettings) "Ocultar configuracion" else "Configuracion")
-            }
+                if (notifications.isNotEmpty()) {
+                    CelesteCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            SectionHeading(
+                                title = "Inbox de Celeste",
+                                subtitle = "Novedades detectadas por Core. Nada se responde ni envia automaticamente.",
+                            )
+                            notifications.take(5).forEach { notice ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                ) {
+                                    Column(
+                                        Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(notice.title, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            notice.detail,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            notice.source.uppercase(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            if (notice.source == "gmail" && notice.messageId != null) {
+                                                OutlinedButton(
+                                                    enabled = !busy,
+                                                    onClick = {
+                                                        assistantInput = (
+                                                            "Lee el correo de Gmail con id ${notice.messageId}, " +
+                                                                "resumelo y dime si parece necesitar respuesta."
+                                                            )
+                                                        runIo {
+                                                            val api = CelesteApi(store.load())
+                                                            withContext(Dispatchers.IO) {
+                                                                api.markNotificationSeen(notice.id)
+                                                            }
+                                                            loadNotifications(api)
+                                                            message = "Consulta preparada para Celeste"
+                                                        }
+                                                    },
+                                                ) { Text("Preguntar") }
+                                            } else {
+                                                OutlinedButton(
+                                                    enabled = !busy,
+                                                    onClick = {
+                                                        runIo {
+                                                            val api = CelesteApi(store.load())
+                                                            withContext(Dispatchers.IO) {
+                                                                api.markNotificationSeen(notice.id)
+                                                            }
+                                                            loadNotifications(api)
+                                                        }
+                                                    },
+                                                ) { Text("Visto") }
+                                            }
+                                            TextButton(
+                                                enabled = !busy,
+                                                onClick = {
+                                                    runIo {
+                                                        val api = CelesteApi(store.load())
+                                                        withContext(Dispatchers.IO) {
+                                                            api.dismissNotification(notice.id)
+                                                        }
+                                                        loadNotifications(api)
+                                                        message = "Aviso descartado"
+                                                    }
+                                                },
+                                            ) { Text("Descartar") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-            if (showSettings) {
-                SettingsCard(
-                    config = config,
-                    onConfigChange = { config = it },
-                    onSave = {
-                        store.save(config)
-                        message = "Configuracion guardada"
-                    },
+                CelesteCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SectionHeading(
+                            title = "Captura rapida",
+                            subtitle = "Guarda primero en el telefono y sincroniza con Brain cuando Core este disponible.",
+                        )
+                        OutlinedTextField(
+                            value = noteTitle,
+                            onValueChange = { noteTitle = it },
+                            label = { Text("Titulo") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                        )
+                        OutlinedTextField(
+                            value = noteContent,
+                            onValueChange = { noteContent = it },
+                            label = { Text("Que quieres recordar?") },
+                            minLines = 3,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                        )
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !busy && noteTitle.isNotBlank(),
+                            onClick = {
+                                val title = noteTitle.trim()
+                                val content = noteContent.trim()
+                                runIo {
+                                    val result = withContext(Dispatchers.IO) {
+                                        repository.enqueueAndTrySync(title, content)
+                                    }
+
+                                    noteTitle = ""
+                                    noteContent = ""
+                                    loadPending()
+
+                                    if (result.syncedNow) {
+                                        message = "Nota guardada en Celeste Brain"
+                                        try {
+                                            notes = withContext(Dispatchers.IO) {
+                                                CelesteApi(store.load()).listNotes()
+                                            }
+                                        } catch (_: Exception) {
+                                            // A later refresh updates the list.
+                                        }
+                                    } else {
+                                        statusText = "Fuera de linea"
+                                        hostname = ""
+                                        message = "Nota guardada en este telefono. Se sincronizara cuando Celeste Core vuelva."
+                                    }
+                                }
+                            },
+                        ) { Text("Guardar nota") }
+                    }
+                }
+
+                CelesteCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SectionHeading(
+                            title = "Explorar Brain",
+                            subtitle = "Busca por titulo, contenido o etiquetas.",
+                        )
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { value ->
+                                searchQuery = value
+                                if (value.isBlank()) {
+                                    searchPerformed = false
+                                    searchResults = emptyList()
+                                }
+                            },
+                            placeholder = { Text("Moto, trabajo, pendiente...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                        )
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !busy && searchQuery.isNotBlank(),
+                            onClick = {
+                                val query = searchQuery.trim()
+                                runIo {
+                                    val api = CelesteApi(store.load())
+                                    searchResults = withContext(Dispatchers.IO) {
+                                        api.searchNotes(query)
+                                    }
+                                    searchPerformed = true
+                                    message = if (searchResults.isEmpty()) {
+                                        "No encontre notas para '$query'."
+                                    } else {
+                                        "Encontradas ${searchResults.size} nota(s) para '$query'."
+                                    }
+                                }
+                            },
+                        ) { Text("Buscar en Brain") }
+
+                        if (searchPerformed) {
+                            if (searchResults.isEmpty()) {
+                                Text(
+                                    "Sin resultados.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else {
+                                searchResults.take(10).forEach { note ->
+                                    NotePreview(note)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (pendingNotes.isNotEmpty()) {
+                    CelesteCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(18.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            SectionHeading(
+                                title = "Offline seguro",
+                                subtitle = "${pendingNotes.size} nota(s) guardadas localmente esperando sincronizacion.",
+                            )
+                            pendingNotes.take(5).forEach { note ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f),
+                                ) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text(note.title, fontWeight = FontWeight.SemiBold)
+                                        if (note.content.isNotBlank()) {
+                                            Text(note.content, maxLines = 2)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CelesteCard(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        SectionHeading(
+                            title = "Memoria reciente",
+                            subtitle = "Ultimas notas sincronizadas con Celeste Brain.",
+                        )
+                        if (notes.isEmpty()) {
+                            Text(
+                                "Todavia no hay notas remotas cargadas.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            notes.sortedByDescending { it.updatedAt }.take(10).forEach { note ->
+                                NotePreview(note)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotePreview(note: Note) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
+    ) {
+        Column(
+            Modifier.padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(note.title, style = MaterialTheme.typography.titleMedium)
+            if (note.content.isNotBlank()) {
+                Text(
+                    note.content,
+                    maxLines = 3,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
-            if (notifications.isNotEmpty()) {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Avisos de Celeste", fontWeight = FontWeight.Bold)
-                        Text("Novedades detectadas por Core. Nada se responde ni se envia automaticamente.")
-                        notifications.take(5).forEach { notice ->
-                            HorizontalDivider()
-                            Text(notice.title, fontWeight = FontWeight.SemiBold)
-                            Text(notice.detail)
-                            Text(notice.source, style = MaterialTheme.typography.labelSmall)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                if (notice.source == "gmail" && notice.messageId != null) {
-                                    OutlinedButton(
-                                        enabled = !busy,
-                                        onClick = {
-                                            assistantInput = (
-                                                "Lee el correo de Gmail con id ${notice.messageId}, " +
-                                                    "resumelo y dime si parece necesitar respuesta."
-                                                )
-                                            runIo {
-                                                val api = CelesteApi(store.load())
-                                                withContext(Dispatchers.IO) {
-                                                    api.markNotificationSeen(notice.id)
-                                                }
-                                                loadNotifications(api)
-                                                message = "Consulta preparada para Celeste"
-                                            }
-                                        },
-                                    ) { Text("Preguntar") }
-                                } else {
-                                    OutlinedButton(
-                                        enabled = !busy,
-                                        onClick = {
-                                            runIo {
-                                                val api = CelesteApi(store.load())
-                                                withContext(Dispatchers.IO) {
-                                                    api.markNotificationSeen(notice.id)
-                                                }
-                                                loadNotifications(api)
-                                            }
-                                        },
-                                    ) { Text("Visto") }
-                                }
-                                TextButton(
-                                    enabled = !busy,
-                                    onClick = {
-                                        runIo {
-                                            val api = CelesteApi(store.load())
-                                            withContext(Dispatchers.IO) {
-                                                api.dismissNotification(notice.id)
-                                            }
-                                            loadNotifications(api)
-                                            message = "Aviso descartado"
-                                        }
-                                    },
-                                ) { Text("Descartar") }
-                            }
-                        }
-                    }
-                }
+            if (note.tags.isNotEmpty()) {
+                Text(
+                    note.tags.joinToString(" · "),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
-
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Hablar con Celeste", fontWeight = FontWeight.Bold)
-                    Text("Celeste usa herramientas con permisos separados. Las acciones sensibles esperan tu confirmacion.")
-                    OutlinedTextField(
-                        value = assistantInput,
-                        onValueChange = { assistantInput = it },
-                        label = { Text("Preguntale algo a Celeste") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        enabled = !busy && assistantInput.isNotBlank(),
-                        onClick = {
-                            val prompt = assistantInput.trim()
-                            runIo {
-                                val api = CelesteApi(store.load())
-                                val result = withContext(Dispatchers.IO) {
-                                    api.askCeleste(prompt)
-                                }
-                                assistantReply = result.reply
-                                assistantProvider = result.provider
-                                assistantEvents = result.events
-                                assistantInput = ""
-                                loadAssistantConfirmations(api)
-                                message = "Respuesta de Celeste"
-
-                                if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
-                                    try {
-                                        notes = withContext(Dispatchers.IO) { api.listNotes() }
-                                    } catch (_: Exception) {
-                                        // The assistant tool already confirmed the note write.
-                                    }
-                                }
-                            }
-                        },
-                    ) { Text("Preguntar") }
-
-                    if (assistantReply.isNotBlank()) {
-                        HorizontalDivider()
-                        Text(assistantReply)
-                        if (assistantProvider.isNotBlank()) {
-                            Text("Proveedor: $assistantProvider", style = MaterialTheme.typography.labelSmall)
-                        }
-                        if (assistantEvents.isNotEmpty()) {
-                            Text(
-                                "Herramientas: " + assistantEvents.joinToString {
-                                    "${it.tool} (${it.risk}, ${it.status})"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    }
-
-                    if (pendingAssistantActions.isNotEmpty()) {
-                        HorizontalDivider()
-                        Text("Requiere tu confirmacion", fontWeight = FontWeight.SemiBold)
-                        pendingAssistantActions.forEach { action ->
-                            val confirmationId = action.confirmationId
-                            Text(action.summary ?: action.tool)
-                            Text(
-                                "${action.tool} · ${action.risk}",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    enabled = !busy && confirmationId != null,
-                                    onClick = {
-                                        if (confirmationId != null) {
-                                            runIo {
-                                                val api = CelesteApi(store.load())
-                                                val result = withContext(Dispatchers.IO) {
-                                                    api.confirmAssistantAction(confirmationId)
-                                                }
-                                                assistantEvents = assistantEvents + result
-                                                loadAssistantConfirmations(api)
-                                                if (result.status == "executed") {
-                                                    message = "Accion confirmada: ${result.tool}"
-                                                    if (result.tool in setOf("update_note", "delete_note", "create_note")) {
-                                                        notes = withContext(Dispatchers.IO) { api.listNotes() }
-                                                    }
-                                                } else {
-                                                    message = result.summary ?: "La accion no se pudo ejecutar."
-                                                }
-                                            }
-                                        }
-                                    },
-                                ) { Text("Confirmar") }
-                                OutlinedButton(
-                                    enabled = !busy && confirmationId != null,
-                                    onClick = {
-                                        if (confirmationId != null) {
-                                            runIo {
-                                                val api = CelesteApi(store.load())
-                                                val result = withContext(Dispatchers.IO) {
-                                                    api.cancelAssistantAction(confirmationId)
-                                                }
-                                                assistantEvents = assistantEvents + result
-                                                loadAssistantConfirmations(api)
-                                                message = "Accion cancelada: ${result.tool}"
-                                            }
-                                        }
-                                    },
-                                ) { Text("Cancelar") }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Nueva nota", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = noteTitle,
-                        onValueChange = { noteTitle = it },
-                        label = { Text("Titulo") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = noteContent,
-                        onValueChange = { noteContent = it },
-                        label = { Text("Que quieres recordar?") },
-                        minLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        enabled = !busy && noteTitle.isNotBlank(),
-                        onClick = {
-                            val title = noteTitle.trim()
-                            val content = noteContent.trim()
-                            runIo {
-                                val result = withContext(Dispatchers.IO) {
-                                    repository.enqueueAndTrySync(title, content)
-                                }
-
-                                noteTitle = ""
-                                noteContent = ""
-                                loadPending()
-
-                                if (result.syncedNow) {
-                                    message = "Nota guardada en Celeste Brain"
-                                    try {
-                                        val api = CelesteApi(store.load())
-                                        notes = withContext(Dispatchers.IO) { api.listNotes() }
-                                    } catch (_: Exception) {
-                                        // The POST was confirmed; a later refresh will update the list.
-                                    }
-                                } else {
-                                    statusText = "Fuera de linea"
-                                    hostname = ""
-                                    message = "Nota guardada en este telefono. Se sincronizara cuando Celeste Core vuelva."
-                                }
-                            }
-                        },
-                    ) { Text("Guardar nota") }
-                }
-            }
-
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Buscar en Celeste Brain", fontWeight = FontWeight.Bold)
-                    Text("Busca por titulo, contenido o tags.")
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { value ->
-                            searchQuery = value
-                            if (value.isBlank()) {
-                                searchPerformed = false
-                                searchResults = emptyList()
-                            }
-                        },
-                        label = { Text("Que quieres encontrar?") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        enabled = !busy && searchQuery.isNotBlank(),
-                        onClick = {
-                            val query = searchQuery.trim()
-                            runIo {
-                                val api = CelesteApi(store.load())
-                                searchResults = withContext(Dispatchers.IO) {
-                                    api.searchNotes(query)
-                                }
-                                searchPerformed = true
-                                message = if (searchResults.isEmpty()) {
-                                    "No encontre notas para '$query'."
-                                } else {
-                                    "Encontradas ${searchResults.size} nota(s) para '$query'."
-                                }
-                            }
-                        },
-                    ) { Text("Buscar") }
-
-                    if (searchPerformed) {
-                        if (searchResults.isEmpty()) {
-                            Text("Sin resultados.")
-                        } else {
-                            searchResults.take(10).forEach { note ->
-                                HorizontalDivider()
-                                Text(note.title, fontWeight = FontWeight.SemiBold)
-                                if (note.content.isNotBlank()) Text(note.content, maxLines = 3)
-                                if (note.tags.isNotEmpty()) {
-                                    Text(note.tags.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (message.isNotBlank()) Text(message)
-
-            if (pendingNotes.isNotEmpty()) {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "Pendientes de sincronizar (${pendingNotes.size})",
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text("Estas notas ya estan guardadas de forma local en este telefono.")
-                        pendingNotes.take(5).forEach { note ->
-                            HorizontalDivider()
-                            Text(note.title, fontWeight = FontWeight.SemiBold)
-                            if (note.content.isNotBlank()) Text(note.content, maxLines = 2)
-                            Text("PENDIENTE", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
-
-            Text("Ultimas notas en Celeste Brain", fontWeight = FontWeight.Bold)
-            if (notes.isEmpty()) {
-                Text("Todavia no hay notas remotas cargadas.")
-            } else {
-                notes.sortedByDescending { it.updatedAt }.take(10).forEach { note ->
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(note.title, fontWeight = FontWeight.SemiBold)
-                            if (note.content.isNotBlank()) Text(note.content, maxLines = 3)
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(20.dp))
         }
     }
 }
@@ -554,21 +732,29 @@ private fun SettingsCard(
     onConfigChange: (CelesteConfig) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Configuracion local", fontWeight = FontWeight.Bold)
+    CelesteCard(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SectionHeading(
+                title = "Configuracion local",
+                subtitle = "Estos valores permanecen en el dispositivo.",
+            )
             OutlinedTextField(
                 value = config.coreBaseUrl,
                 onValueChange = { onConfigChange(config.copy(coreBaseUrl = it)) },
                 label = { Text("Celeste Core URL") },
                 placeholder = { Text("http://192.168.x.x:8000") },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
             OutlinedTextField(
                 value = config.apiToken,
                 onValueChange = { onConfigChange(config.copy(apiToken = it)) },
                 label = { Text("API token") },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
             OutlinedTextField(
                 value = config.pcMac,
@@ -576,6 +762,7 @@ private fun SettingsCard(
                 label = { Text("MAC del PC") },
                 placeholder = { Text("AA:BB:CC:DD:EE:FF") },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
             OutlinedTextField(
                 value = config.broadcastAddress,
@@ -583,6 +770,7 @@ private fun SettingsCard(
                 label = { Text("Broadcast") },
                 placeholder = { Text("192.168.x.255") },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
             OutlinedTextField(
                 value = config.wolPort.toString(),
@@ -591,8 +779,11 @@ private fun SettingsCard(
                 },
                 label = { Text("Puerto WOL") },
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
             )
-            Button(onClick = onSave) { Text("Guardar configuracion") }
+            Button(modifier = Modifier.fillMaxWidth(), onClick = onSave) {
+                Text("Guardar configuracion")
+            }
         }
     }
 }
