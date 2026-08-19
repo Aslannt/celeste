@@ -110,3 +110,17 @@ def test_schema_view_still_delegates_real_tool_execution(tmp_path, monkeypatch):
 
     assert event.tool == "get_pc_status"
     assert event.status == "executed"
+
+
+def test_gmail_cues_keep_tool_catalog_enabled():
+    messages = [
+        "Tengo correos sin leer?",
+        "Busca en Gmail los correos de Ana.",
+        "Lee este email.",
+        "Crea un borrador de correo.",
+        "Revisa mi bandeja de entrada.",
+    ]
+
+    for message in messages:
+        assert message_needs_tool_catalog(message) is True
+

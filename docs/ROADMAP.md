@@ -45,22 +45,39 @@
 - [x] `create_note`
 - [x] `search_memory`
 - [x] `get_pc_status`
-- [x] Infraestructura generica de confirmaciones
+- [x] `update_note` y `delete_note` protegidos por CONFIRM
+- [x] Infraestructura de confirmacion, cancelacion y expiracion
+- [x] Auditoria local de herramientas sin guardar argumentos/contenido privado
 - [x] Endpoint `POST /api/v1/assistant/chat`
 - [x] Interfaz Android para hablar con Celeste
-- [ ] Validar proveedor local y herramientas en PC/Android reales
+- [x] Interfaz Android Confirmar/Cancelar para acciones sensibles
+- [x] OpenAI con `store=false` y herramientas serializadas
+- [x] Validar proveedor local y herramientas basicas en el PC real
+- [ ] Revalidar tests Core tras el hardening de confirmaciones/auditoria
+- [ ] Compilar/validar la UI final de confirmaciones en Android real
 - [ ] Configurar y validar un proveedor LLM real
 - [ ] `wake_pc` como herramienta cuando Core pueda ejecutarse fuera del PC objetivo
 
 ## V0.4.1 - Gmail
 
-- [ ] OAuth 2.0 sin guardar contrasena de Gmail
-- [ ] Leer correos recientes/no leidos
-- [ ] Resumir y priorizar correos entrantes
-- [ ] Preparar borradores de respuesta
-- [ ] Preguntar antes de enviar
-- [ ] `send_email` clasificado como CONFIRM
-- [ ] Notificaciones/sincronizacion incremental
+- [x] Cliente Gmail API oficial con OAuth 2.0 local
+- [x] Mantener credenciales/token OAuth fuera de Git
+- [x] Helper local de autorizacion OAuth para Windows
+- [x] `gmail_list_unread` como READ
+- [x] `gmail_search` como READ
+- [x] `gmail_read_message` como READ y contenido marcado como no confiable
+- [x] `gmail_create_draft` como SAFE_WRITE
+- [x] `gmail_create_reply_draft` como SAFE_WRITE
+- [x] `gmail_send_draft` como CONFIRM
+- [x] Flujo borrador -> confirmacion -> envio
+- [x] Proteccion contra instrucciones maliciosas contenidas en correos
+- [ ] Ejecutar tests automatizados del incremento Gmail
+- [ ] Autorizar la cuenta Gmail real en el PC
+- [ ] Validar lectura de correos reales
+- [ ] Validar creacion de un borrador real sin envio
+- [ ] Validar Cancelar y luego Confirmar con un correo de prueba inocuo
+- [ ] Resumir/priorizar correos con proveedor LLM real
+- [ ] Notificaciones/sincronizacion incremental para uso 24/7
 
 ## V0.4.2 - LinkedIn y otros conectores
 

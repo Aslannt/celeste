@@ -43,6 +43,7 @@ private fun CelesteScreen() {
     var hostname by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf<List<Note>>(emptyList()) }
     var pendingNotes by remember { mutableStateOf<List<PendingNoteEntity>>(emptyList()) }
+    var notifications by remember { mutableStateOf<List<CelesteNotification>>(emptyList()) }
     var noteTitle by remember { mutableStateOf("") }
     var noteContent by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
@@ -81,6 +82,10 @@ private fun CelesteScreen() {
         }
     }
 
+    suspend fun loadNotifications(api: CelesteApi) {
+        notifications = withContext(Dispatchers.IO) { api.listNotifications() }
+    }
+
     fun refresh() = runIo {
         val current = store.load()
         val api = CelesteApi(current)
@@ -96,6 +101,11 @@ private fun CelesteScreen() {
             notes = remoteNotes
             pendingAssistantActions = confirmations
             loadPending()
+            try {
+                loadNotifications(api)
+            } catch (_: Exception) {
+                notifications = emptyList()
+            }
 
             message = if (sync.syncedCount > 0) {
                 "Conectado a ${status.name} ${status.version}. Sincronizadas ${sync.syncedCount} nota(s)."
@@ -118,6 +128,25 @@ private fun CelesteScreen() {
         loadPending()
         if (store.load().coreBaseUrl.isNotBlank()) {
             refresh()
+        }
+    }
+
+    // Refresh the local notice feed while the app is active. Core is responsible
+    // for any optional Gmail polling; Android never receives Google credentials.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            val current = store.load()
+            if (current.coreBaseUrl.isNotBlank()) {
+                try {
+                    val latest = withContext(Dispatchers.IO) {
+                        CelesteApi(current).listNotifications()
+                    }
+                    notifications = latest
+                } catch (_: Exception) {
+                    // Notices are best-effort. Existing UI state remains visible.
+                }
+            }
         }
     }
 
@@ -204,6 +233,68 @@ private fun CelesteScreen() {
                         message = "Configuracion guardada"
                     },
                 )
+            }
+
+            if (notifications.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Avisos de Celeste", fontWeight = FontWeight.Bold)
+                        Text("Novedades detectadas por Core. Nada se responde ni se envia automaticamente.")
+                        notifications.take(5).forEach { notice ->
+                            HorizontalDivider()
+                            Text(notice.title, fontWeight = FontWeight.SemiBold)
+                            Text(notice.detail)
+                            Text(notice.source, style = MaterialTheme.typography.labelSmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (notice.source == "gmail" && notice.messageId != null) {
+                                    OutlinedButton(
+                                        enabled = !busy,
+                                        onClick = {
+                                            assistantInput = (
+                                                "Lee el correo de Gmail con id ${notice.messageId}, " +
+                                                    "resumelo y dime si parece necesitar respuesta."
+                                                )
+                                            runIo {
+                                                val api = CelesteApi(store.load())
+                                                withContext(Dispatchers.IO) {
+                                                    api.markNotificationSeen(notice.id)
+                                                }
+                                                loadNotifications(api)
+                                                message = "Consulta preparada para Celeste"
+                                            }
+                                        },
+                                    ) { Text("Preguntar") }
+                                } else {
+                                    OutlinedButton(
+                                        enabled = !busy,
+                                        onClick = {
+                                            runIo {
+                                                val api = CelesteApi(store.load())
+                                                withContext(Dispatchers.IO) {
+                                                    api.markNotificationSeen(notice.id)
+                                                }
+                                                loadNotifications(api)
+                                            }
+                                        },
+                                    ) { Text("Visto") }
+                                }
+                                TextButton(
+                                    enabled = !busy,
+                                    onClick = {
+                                        runIo {
+                                            val api = CelesteApi(store.load())
+                                            withContext(Dispatchers.IO) {
+                                                api.dismissNotification(notice.id)
+                                            }
+                                            loadNotifications(api)
+                                            message = "Aviso descartado"
+                                        }
+                                    },
+                                ) { Text("Descartar") }
+                            }
+                        }
+                    }
+                }
             }
 
             Card(Modifier.fillMaxWidth()) {

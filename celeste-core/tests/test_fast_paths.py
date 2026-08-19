@@ -6,7 +6,7 @@ import app.api.assistant as assistant_api
 from app.config import Settings
 from app.main import app
 from app.services.fast_paths import try_ollama_fast_path
-from app.services.tools import ToolRouter
+from app.services.tools import ToolExecution, ToolRisk, ToolRouter
 
 
 TOKEN = "fast-path-test-token"
@@ -209,6 +209,70 @@ def test_natural_recall_fast_path_does_not_capture_ambiguous_question(tmp_path, 
 
     result = try_ollama_fast_path(
         "No te habia dicho algo sobre la moto? Que crees que deberia hacer?",
+        router,
+        settings,
+    )
+
+    assert result is None
+
+
+def test_explicit_unread_gmail_skips_ollama(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    monkeypatch.setenv("CELESTE_GMAIL_ENABLED", "true")
+    monkeypatch.setattr(assistant_api, "build_provider", _forbid_model_build)
+
+    original_execute = ToolRouter.execute
+
+    def fake_execute(self, name, arguments):
+        if name == "gmail_list_unread":
+            assert arguments == {"limit": 5}
+            return ToolExecution(
+                tool="gmail_list_unread",
+                risk=ToolRisk.READ,
+                status="executed",
+                output=[
+                    {
+                        "from": "Ana <ana@example.com>",
+                        "subject": "Estado del proyecto",
+                    }
+                ],
+            )
+        return original_execute(self, name, arguments)
+
+    monkeypatch.setattr(ToolRouter, "execute", fake_execute)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/assistant/chat",
+            headers=HEADERS,
+            json={"message": "\u00bfQu\u00e9 correos no le\u00eddos tengo?"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "core_fast_path"
+    assert body["events"][0]["tool"] == "gmail_list_unread"
+    assert body["events"][0]["risk"] == "READ"
+    assert body["events"][0]["status"] == "executed"
+    assert "Ana" in body["reply"]
+    assert "Estado del proyecto" in body["reply"]
+    assert body["performance"]["model_used"] is False
+    assert body["performance"]["fast_path"] == "gmail_list_unread"
+    assert body["performance"]["ollama_rounds"] == []
+
+
+def test_gmail_unread_fast_path_does_not_capture_read_and_summarize_request(
+    tmp_path,
+    monkeypatch,
+):
+    _configure(tmp_path, monkeypatch)
+    monkeypatch.setenv("CELESTE_GMAIL_ENABLED", "true")
+
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    result = try_ollama_fast_path(
+        "Lee mis correos no leidos y resumelos.",
         router,
         settings,
     )

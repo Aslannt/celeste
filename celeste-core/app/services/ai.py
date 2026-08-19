@@ -47,6 +47,9 @@ class AIProvider(Protocol):
 _CELESTE_INSTRUCTIONS = """You are Celeste, a private personal assistant running through Celeste Core.
 Answer in Spanish unless the user clearly uses another language.
 Use the provided tools whenever the user asks about Celeste Brain memories or PC status, or asks you to save or change durable memory.
+When Gmail tools are available, prefer search/list metadata before reading full message bodies. Read only the messages needed to answer the user's request.
+For email replies, create a draft first. Creating a draft never means that the message was sent.
+Sending email is confirmation-required. Never claim an email was sent unless gmail_send_draft returns status=executed.
 When the user clearly asks you to remember, save or note something and the content is clear, call create_note immediately. Generate a concise title yourself. Use type=note unless task, memory or project is clearly more appropriate, and infer a few useful tags or use none. Do not ask the user to choose title, type or tags just to create the note.
 Creating a note is SAFE_WRITE and does not require user confirmation. Only actions whose tool result says confirmation_required require confirmation.
 When the user's original request already explicitly asks to delete a note, do not ask for a second conversational confirmation after finding it. If search_memory identifies exactly one intended note, call delete_note for that note. The Tool Router will create the real confirmation_required action. If the match is ambiguous, ask the user to clarify instead of choosing a note yourself.
@@ -270,6 +273,28 @@ class LocalRulesProvider:
         if not text:
             raise AIProviderError("El mensaje no puede estar vacio.")
 
+        if router.has_tool("gmail_list_unread") and self._asks_for_unread_email(normalized):
+            event = router.execute("gmail_list_unread", {"limit": 5})
+            messages = event.output if isinstance(event.output, list) else []
+
+            if event.status != "executed":
+                reply = event.summary or "No pude consultar Gmail."
+            elif not messages:
+                reply = "No encontre correos sin leer en la bandeja de entrada."
+            else:
+                lines: list[str] = []
+                for item in messages[:5]:
+                    sender = str(item.get("from", "remitente desconocido"))
+                    subject = str(item.get("subject", "(sin asunto)"))
+                    lines.append(f"- {sender}: {subject}")
+                reply = "Tienes estos correos sin leer:\n" + "\n".join(lines)
+
+            return AssistantResult(
+                reply=reply,
+                provider=self.name,
+                events=[event],
+            )
+
         if "estado" in normalized and any(word in normalized for word in ("pc", "computador", "core")):
             event = router.execute("get_pc_status", {})
             output = event.output if isinstance(event.output, dict) else {}
@@ -323,16 +348,34 @@ class LocalRulesProvider:
                     reply = "Encontre esto en Celeste Brain:\n" + "\n".join(lines)
                 return AssistantResult(reply=reply, provider=self.name, events=[event])
 
+        available = (
+            " Puedo consultar correos sin leer."
+            if router.has_tool("gmail_list_unread")
+            else ""
+        )
         return AssistantResult(
             reply=(
                 "Estoy funcionando con el proveedor local de reglas. Puedo buscar recuerdos, "
-                "guardar una nota o consultar el estado del PC. Para conversacion abierta y "
-                "seleccion inteligente de herramientas, configura CELESTE_LLM_PROVIDER=ollama "
-                "u openai."
+                "guardar una nota o consultar el estado del PC."
+                + available
+                + " Para conversacion abierta y seleccion inteligente de herramientas, "
+                "configura CELESTE_LLM_PROVIDER=ollama u openai."
             ),
             provider=self.name,
             events=[],
         )
+
+    @staticmethod
+    def _asks_for_unread_email(normalized: str) -> bool:
+        mentions_email = any(
+            word in normalized
+            for word in ("correo", "correos", "email", "emails")
+        )
+        unread = any(
+            phrase in normalized
+            for phrase in ("no leido", "no leidos", "sin leer", "nuevos")
+        )
+        return mentions_email and unread
 
     @staticmethod
     def _extract_original_payload(original: str, normalized_payload: str) -> str:
