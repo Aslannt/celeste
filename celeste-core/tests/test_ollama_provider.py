@@ -194,3 +194,69 @@ def test_ollama_provider_falls_back_to_real_note_write_when_model_skips_tool(tmp
     note = router.storage.get(output["id"])
     assert note.deleted is False
     assert note.content == "esta es una nota temporal para probar confirmaciones V04"
+
+
+def test_ollama_provider_turns_explicit_delete_after_unique_search_into_confirmation(
+    tmp_path,
+    monkeypatch,
+):
+    settings = _configure(tmp_path, monkeypatch)
+    calls: list[dict] = []
+    router = ToolRouter(settings)
+    created = router.execute(
+        "create_note",
+        {
+            "title": "Nota Temporal Confirmaciones V04",
+            "content": "nota temporal",
+            "type": "note",
+            "tags": ["V04"],
+        },
+    )
+    assert created.status == "executed"
+    note_id = created.output["id"]
+
+    fake = FakeClient(
+        [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "search_memory",
+                                "arguments": {
+                                    "query": "Nota Temporal Confirmaciones V04",
+                                    "limit": 5,
+                                },
+                            }
+                        }
+                    ],
+                }
+            },
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "Encontre la nota. Deseas que la elimine?",
+                }
+            },
+        ],
+        calls,
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **_: fake)
+
+    result = OllamaProvider(
+        settings.ollama_url,
+        settings.llm_model,
+        settings.llm_timeout_seconds,
+        settings.ollama_think,
+    ).answer("Busca la nota temporal de confirmaciones V04 y eliminala.", router)
+
+    assert len(calls) == 2
+    assert [event.tool for event in result.events] == ["search_memory", "delete_note"]
+    assert result.events[0].status == "executed"
+    assert result.events[1].risk == ToolRisk.CONFIRM
+    assert result.events[1].status == "confirmation_required"
+    assert result.events[1].confirmation_id is not None
+    assert "confirmacion" in result.reply.lower()
+    assert router.storage.get(note_id).deleted is False
