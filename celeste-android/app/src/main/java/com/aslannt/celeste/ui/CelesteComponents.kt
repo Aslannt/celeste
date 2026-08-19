@@ -56,7 +56,10 @@ fun CelesteHero(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Transparent,
+            contentColor = colors.onSurface,
+        ),
         border = BorderStroke(1.dp, colors.outlineVariant.copy(alpha = 0.85f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -100,7 +103,8 @@ fun CelesteCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -119,7 +123,11 @@ fun SectionHeading(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
             if (trailing != null) Row(content = trailing)
         }
         if (!subtitle.isNullOrBlank()) {
@@ -140,6 +148,7 @@ fun StatusPill(text: String, active: Boolean) {
     Surface(
         shape = CircleShape,
         color = container,
+        contentColor = content,
         border = BorderStroke(1.dp, content.copy(alpha = 0.28f)),
     ) {
         Row(
@@ -158,10 +167,20 @@ private fun MiniMetric(label: String, value: String) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
