@@ -27,6 +27,20 @@ def test_clear_conversation_omits_tool_schemas(tmp_path, monkeypatch):
     assert view.tool_schemas() == []
 
 
+def test_technical_memory_questions_do_not_expose_personal_tools(tmp_path, monkeypatch):
+    router = _router(tmp_path, monkeypatch)
+    messages = [
+        "Explicame en dos frases cual es la diferencia entre memoria RAM y almacenamiento.",
+        "Que diferencia hay entre memoria RAM y memoria ROM?",
+        "Como funciona la memoria cache de un procesador?",
+    ]
+
+    for message in messages:
+        view = scope_router_for_message(router, message)
+        assert message_needs_tool_catalog(message) is False
+        assert view.tool_schemas() == []
+
+
 def test_personal_memory_cues_keep_full_tool_catalog(tmp_path, monkeypatch):
     router = _router(tmp_path, monkeypatch)
     expected_names = {schema["name"] for schema in router.tool_schemas()}
@@ -36,6 +50,8 @@ def test_personal_memory_cues_keep_full_tool_catalog(tmp_path, monkeypatch):
         "Puedes revisar mis notas sobre la moto?",
         "Quiero modificar una nota anterior.",
         "Que recuerdas de lo que hablamos la ultima vez?",
+        "Consulta tu memoria sobre la moto.",
+        "Que tienes en tu memoria sobre el mantenimiento?",
     ]
 
     for message in messages:
