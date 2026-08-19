@@ -172,3 +172,17 @@ def test_natural_recall_fast_path_refuses_mutating_request(tmp_path, monkeypatch
     )
 
     assert result is None
+
+
+def test_natural_recall_fast_path_does_not_capture_analysis_request(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    result = try_ollama_fast_path(
+        "Revisa mis notas de la moto y dime cual parece mas urgente.",
+        router,
+        settings,
+    )
+
+    assert result is None
