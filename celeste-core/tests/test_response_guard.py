@@ -1,4 +1,8 @@
-from app.services.response_guard import guard_memory_reply, sanitize_public_events
+from app.services.response_guard import (
+    grounded_memory_priority_reply,
+    guard_memory_reply,
+    sanitize_public_events,
+)
 from app.services.tools import ToolExecution, ToolRisk
 
 
@@ -50,6 +54,26 @@ def test_priority_request_replaces_domain_hallucinations_with_grounded_reply():
     assert "tengo que revisar el aceite de la moto" in reply
     assert "comprar lubricante para la cadena de la moto" in reply
     assert "no demuestra que exista una notificacion activa" in reply.lower()
+
+
+def test_priority_request_can_be_grounded_immediately_after_search():
+    reply = grounded_memory_priority_reply(
+        "Revisa lo que recuerdas de la moto y dime que deberia hacer primero y por que.",
+        [_search_event()],
+    )
+
+    assert reply is not None
+    assert "no puedo determinar con certeza" in reply.lower()
+    assert "tengo que revisar el aceite de la moto" in reply
+
+
+def test_priority_early_exit_does_not_intercept_mutation_request():
+    reply = grounded_memory_priority_reply(
+        "Revisa lo de la moto, dime que deberia hacer primero y elimina la primera nota.",
+        [_search_event()],
+    )
+
+    assert reply is None
 
 
 def test_schedule_claim_without_priority_is_replaced():
