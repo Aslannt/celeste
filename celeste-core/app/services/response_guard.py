@@ -14,6 +14,12 @@ _PRIORITY_PATTERNS = (
     re.compile(r"\b(?:que|qué) (?:me )?recomiendas\b"),
 )
 
+_MUTATION_PATTERN = re.compile(
+    r"\b(?:elimina(?:r|la|lo)?|borra(?:r|la|lo)?|modifica(?:r|la|lo)?|"
+    r"actualiza(?:r|la|lo)?|edita(?:r|la|lo)?|cambia(?:r|la|lo)?|"
+    r"guarda(?:r)?|anota(?:r)?|crea(?:r)?)\b"
+)
+
 _SCHEDULE_CLAIM_PATTERNS = (
     re.compile(r"\b(?:recordatorio|tarea|evento)\b.{0,48}\bprogramad[oa]s?\b"),
     re.compile(r"\b(?:ya tienes|hay)\b.{0,72}\bprogramad[oa]s?\b"),
@@ -30,6 +36,10 @@ def _plain(value: str) -> str:
 def _asks_for_priority(message: str) -> bool:
     text = _plain(message)
     return any(pattern.search(text) for pattern in _PRIORITY_PATTERNS)
+
+
+def _has_mutation_request(message: str) -> bool:
+    return _MUTATION_PATTERN.search(_plain(message)) is not None
 
 
 def _claims_schedule(reply: str) -> bool:
@@ -79,6 +89,28 @@ def _grounded_memory_reply(notes: list[dict[str, Any]], *, priority_requested: b
     return reply
 
 
+def grounded_memory_priority_reply(
+    message: str,
+    events: list[ToolExecution],
+) -> str | None:
+    """Return a deterministic reply once a read-only priority search has enough data.
+
+    This is safe to use inside a provider loop: it only activates when every tool
+    event so far is an executed search_memory result, the user explicitly asks for
+    prioritization, and the original request contains no mutation intent.
+    """
+
+    if _has_mutation_request(message) or not _asks_for_priority(message):
+        return None
+    if not events or any(event.tool != "search_memory" for event in events):
+        return None
+
+    notes = _memory_results(events)
+    if not notes:
+        return None
+    return _grounded_memory_reply(notes, priority_requested=True)
+
+
 def guard_memory_reply(
     message: str,
     reply: str,
@@ -93,6 +125,13 @@ def guard_memory_reply(
     scheduler tool established.
     """
 
+    if _has_mutation_request(message):
+        return reply, False
+
+    priority_reply = grounded_memory_priority_reply(message, events)
+    if priority_reply is not None:
+        return priority_reply, True
+
     if not events or any(event.tool != "search_memory" for event in events):
         return reply, False
 
@@ -100,12 +139,10 @@ def guard_memory_reply(
     if not notes:
         return reply, False
 
-    priority_requested = _asks_for_priority(message)
-    schedule_claimed = _claims_schedule(reply)
-    if not priority_requested and not schedule_claimed:
+    if not _claims_schedule(reply):
         return reply, False
 
-    return _grounded_memory_reply(notes, priority_requested=priority_requested), True
+    return _grounded_memory_reply(notes, priority_requested=False), True
 
 
 def sanitize_public_events(events: Any) -> Any:
