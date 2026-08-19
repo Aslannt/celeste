@@ -155,3 +155,42 @@ def test_ollama_provider_stops_before_confirm_tool_executes(tmp_path, monkeypatc
     assert result.events[0].status == "confirmation_required"
     assert result.events[0].confirmation_id is not None
     assert "confirmacion" in result.reply.lower()
+
+
+def test_ollama_provider_falls_back_to_real_note_write_when_model_skips_tool(tmp_path, monkeypatch):
+    settings = _configure(tmp_path, monkeypatch)
+    calls: list[dict] = []
+    fake = FakeClient(
+        [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "He creado la nota en mi memoria.",
+                }
+            }
+        ],
+        calls,
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **_: fake)
+
+    router = ToolRouter(settings)
+    message = "Recuerda que esta es una nota temporal para probar confirmaciones V04"
+    result = OllamaProvider(
+        settings.ollama_url,
+        settings.llm_model,
+        settings.llm_timeout_seconds,
+        settings.ollama_think,
+    ).answer(message, router)
+
+    assert len(calls) == 1
+    assert result.provider == "ollama"
+    assert result.events[0].tool == "create_note"
+    assert result.events[0].risk == ToolRisk.SAFE_WRITE
+    assert result.events[0].status == "executed"
+    assert "Celeste Brain" in result.reply
+
+    output = result.events[0].output
+    assert isinstance(output, dict)
+    note = router.storage.get(output["id"])
+    assert note.deleted is False
+    assert note.content == "esta es una nota temporal para probar confirmaciones V04"
