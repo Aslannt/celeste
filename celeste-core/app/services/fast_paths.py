@@ -19,6 +19,21 @@ _CREATE_PATTERNS = [
     ),
 ]
 
+_GMAIL_UNREAD_PATTERNS = [
+    re.compile(
+        r"^(?:que|cuales) (?:son )?(?:mis )?(?:correos|emails) "
+        r"(?:no leidos|sin leer|nuevos)(?: tengo)?$"
+    ),
+    re.compile(
+        r"^tengo (?:correos|emails) (?:no leidos|sin leer|nuevos)$"
+    ),
+    re.compile(
+        r"^(?:dime|muestra|muestrame|lista|listame) "
+        r"(?:mis )?(?:correos|emails) (?:no leidos|sin leer|nuevos)$"
+    ),
+]
+
+
 _PC_STATUS_PATTERNS = [
     re.compile(
         r"^(?:(?:cual es|dime|muestra|consulta|revisa|como esta|que tal esta) )?"
@@ -97,6 +112,33 @@ def _create_arguments(message: str) -> dict[str, Any] | None:
             "tags": ["assistant"],
         }
     return None
+
+
+def _gmail_unread_requested(message: str) -> bool:
+    text = _intent_text(message)
+    return any(pattern.fullmatch(text) for pattern in _GMAIL_UNREAD_PATTERNS)
+
+
+def _gmail_unread_reply(event: ToolExecution) -> str:
+    if event.status != "executed":
+        return event.summary or "No pude consultar Gmail."
+
+    messages = event.output if isinstance(event.output, list) else []
+    if not messages:
+        return "No encontre correos sin leer en tu bandeja de entrada."
+
+    lines: list[str] = []
+    for item in messages[:5]:
+        if not isinstance(item, dict):
+            continue
+        sender = str(item.get("from") or "Remitente desconocido").strip()
+        subject = str(item.get("subject") or "(sin asunto)").strip()
+        lines.append(f"- {sender}: {subject}")
+
+    if not lines:
+        return "No encontre correos sin leer en tu bandeja de entrada."
+
+    return "Estos son hasta 5 correos sin leer:\n" + "\n".join(lines)
 
 
 def _pc_status_requested(message: str) -> bool:
@@ -203,6 +245,21 @@ def try_ollama_fast_path(
             event=event,
             tool_started=tool_started,
             reply=reply,
+        )
+
+    if (
+        router.has_tool("gmail_list_unread")
+        and _gmail_unread_requested(message)
+    ):
+        tool_started = time.perf_counter()
+        event = router.execute("gmail_list_unread", {"limit": 5})
+        return _result(
+            settings=settings,
+            started=started,
+            fast_path="gmail_list_unread",
+            event=event,
+            tool_started=tool_started,
+            reply=_gmail_unread_reply(event),
         )
 
     if _pc_status_requested(message):
