@@ -10,6 +10,7 @@ from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
 from app.services.fast_paths import try_ollama_fast_path
 from app.services.llm_tool_scope import scope_router_for_message
+from app.services.response_guard import guard_memory_reply
 from app.services.tools import ToolRouter
 
 
@@ -94,7 +95,20 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
             detail=str(exc),
         ) from exc
 
-    return AssistantChatResponse.model_validate(result.to_dict())
+    result_dict = result.to_dict()
+    guarded_reply, guarded = guard_memory_reply(
+        payload.message,
+        result.reply,
+        result.events,
+    )
+    if guarded:
+        result_dict["reply"] = guarded_reply
+        performance = result_dict.get("performance")
+        guarded_performance = dict(performance) if isinstance(performance, dict) else {}
+        guarded_performance["response_guard"] = "memory_grounding"
+        result_dict["performance"] = guarded_performance
+
+    return AssistantChatResponse.model_validate(result_dict)
 
 
 @router.post("/confirm/{confirmation_id}", response_model=ToolEventResponse)
