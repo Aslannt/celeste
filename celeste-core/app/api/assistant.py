@@ -8,10 +8,10 @@ from pydantic import BaseModel, Field
 from app.config import Settings
 from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
+from app.services.assistant_tools import CelesteToolRouter
 from app.services.fast_paths import try_ollama_fast_path
 from app.services.llm_tool_scope import scope_router_for_message
 from app.services.response_guard import guard_memory_reply, sanitize_public_events
-from app.services.tools import ToolRouter
 
 
 class AssistantChatRequest(BaseModel):
@@ -50,13 +50,13 @@ router = APIRouter(
 
 @router.get("/tools")
 def list_assistant_tools() -> dict[str, list[dict[str, str]]]:
-    router_service = ToolRouter(Settings.from_env())
+    router_service = CelesteToolRouter(Settings.from_env())
     return {"tools": router_service.catalog()}
 
 
 @router.get("/confirmations", response_model=list[PendingConfirmationResponse])
 def list_pending_confirmations() -> list[PendingConfirmationResponse]:
-    router_service = ToolRouter(Settings.from_env())
+    router_service = CelesteToolRouter(Settings.from_env())
     return [
         PendingConfirmationResponse.model_validate(item)
         for item in router_service.pending_confirmations()
@@ -67,14 +67,14 @@ def list_pending_confirmations() -> list[PendingConfirmationResponse]:
 def list_tool_audit(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> dict[str, list[dict[str, Any]]]:
-    router_service = ToolRouter(Settings.from_env())
+    router_service = CelesteToolRouter(Settings.from_env())
     return {"events": router_service.recent_audit(limit=limit)}
 
 
 @router.post("/chat", response_model=AssistantChatResponse)
 def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
     settings = Settings.from_env()
-    router_service = ToolRouter(settings)
+    router_service = CelesteToolRouter(settings)
 
     fast_path = try_ollama_fast_path(payload.message, router_service, settings)
     if fast_path is not None:
@@ -114,7 +114,7 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
 
 @router.post("/confirm/{confirmation_id}", response_model=ToolEventResponse)
 def confirm_assistant_action(confirmation_id: str) -> ToolEventResponse:
-    router_service = ToolRouter(Settings.from_env())
+    router_service = CelesteToolRouter(Settings.from_env())
     result = router_service.confirm(confirmation_id)
     if result is None:
         raise HTTPException(
@@ -126,7 +126,7 @@ def confirm_assistant_action(confirmation_id: str) -> ToolEventResponse:
 
 @router.delete("/confirm/{confirmation_id}", response_model=ToolEventResponse)
 def cancel_assistant_action(confirmation_id: str) -> ToolEventResponse:
-    router_service = ToolRouter(Settings.from_env())
+    router_service = CelesteToolRouter(Settings.from_env())
     result = router_service.cancel(confirmation_id)
     if result is None:
         raise HTTPException(
