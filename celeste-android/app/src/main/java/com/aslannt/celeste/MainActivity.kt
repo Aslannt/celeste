@@ -10,10 +10,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.aslannt.celeste.data.*
 import com.aslannt.celeste.data.local.PendingNoteEntity
+import com.aslannt.celeste.ui.AssistantResponseCard
 import com.aslannt.celeste.ui.CelesteBackdrop
 import com.aslannt.celeste.ui.CelesteCard
 import com.aslannt.celeste.ui.CelesteHero
@@ -23,6 +26,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -225,28 +233,7 @@ private fun CelesteScreen() {
                     },
                 )
 
-                CelesteCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SectionHeading("Core & dispositivo", "Control local del PC y conexion con Celeste Core.")
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(enabled = !busy, onClick = {
-                                runIo {
-                                    val c = store.load()
-                                    require(c.pcMac.isNotBlank()) { "Configura la MAC del PC." }
-                                    require(c.broadcastAddress.isNotBlank()) { "Configura la direccion broadcast." }
-                                    withContext(Dispatchers.IO) { WakeOnLan.send(c.pcMac, c.broadcastAddress, c.wolPort) }
-                                    message = "Magic Packet enviado"
-                                }
-                            }) { Text("Encender PC") }
-                            OutlinedButton(enabled = !busy, onClick = { refresh() }) { Text("Actualizar") }
-                        }
-                        TextButton(onClick = { showSettings = !showSettings }) {
-                            Text(if (showSettings) "Ocultar configuracion" else "Configuracion local")
-                        }
-                    }
-                }
-
-                if (showSettings) {
+                if (showSettings && config.coreBaseUrl.isBlank()) {
                     SettingsCard(config, { config = it }) {
                         store.save(config)
                         message = "Configuracion guardada"
@@ -267,8 +254,8 @@ private fun CelesteScreen() {
                             value = assistantInput,
                             onValueChange = { assistantInput = it },
                             placeholder = { Text("¿Qué necesitas?") },
-                            minLines = 3,
-                            maxLines = 8,
+                            minLines = 1,
+                            maxLines = 4,
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
                         )
@@ -277,6 +264,7 @@ private fun CelesteScreen() {
                             enabled = !busy && assistantInput.isNotBlank(),
                             onClick = {
                                 val prompt = assistantInput.trim()
+                                message = ""
                                 runIo {
                                     val api = CelesteApi(store.load())
                                     val result = withContext(Dispatchers.IO) { api.askCeleste(prompt) }
@@ -287,7 +275,6 @@ private fun CelesteScreen() {
                                     loadAssistantConfirmations(api)
                                     loadDailyContext(api)
                                     loadNotifications(api)
-                                    message = "Respuesta de Celeste"
                                     if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
                                         try { notes = withContext(Dispatchers.IO) { api.listNotes() } } catch (_: Exception) { }
                                     }
@@ -297,29 +284,11 @@ private fun CelesteScreen() {
 
                         if (assistantReply.isNotBlank()) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Surface(
-                                Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.medium,
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
-                            ) {
-                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(assistantReply, style = MaterialTheme.typography.bodyLarge)
-                                    if (assistantProvider.isNotBlank()) {
-                                        Text(
-                                            "Proveedor · $assistantProvider",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    if (assistantEvents.isNotEmpty()) {
-                                        Text(
-                                            assistantEvents.joinToString("  ·  ") { "${it.tool} ${it.status}" },
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                            }
+                            AssistantResponseCard(
+                                reply = assistantReply,
+                                provider = assistantProvider,
+                                events = assistantEvents,
+                            )
                         }
 
                         if (pendingAssistantActions.isNotEmpty()) {
@@ -531,6 +500,34 @@ private fun CelesteScreen() {
                 }
 
                 CelesteCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SectionHeading("Core & dispositivo", "Control local del PC y conexion con Celeste Core.")
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(enabled = !busy, onClick = {
+                                runIo {
+                                    val c = store.load()
+                                    require(c.pcMac.isNotBlank()) { "Configura la MAC del PC." }
+                                    require(c.broadcastAddress.isNotBlank()) { "Configura la direccion broadcast." }
+                                    withContext(Dispatchers.IO) { WakeOnLan.send(c.pcMac, c.broadcastAddress, c.wolPort) }
+                                    message = "Magic Packet enviado"
+                                }
+                            }) { Text("Encender PC") }
+                            OutlinedButton(enabled = !busy, onClick = { refresh() }) { Text("Actualizar") }
+                        }
+                        TextButton(onClick = { showSettings = !showSettings }) {
+                            Text(if (showSettings) "Ocultar configuracion" else "Configuracion local")
+                        }
+                    }
+                }
+
+                if (showSettings && config.coreBaseUrl.isNotBlank()) {
+                    SettingsCard(config, { config = it }) {
+                        store.save(config)
+                        message = "Configuracion guardada"
+                    }
+                }
+
+                CelesteCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SectionHeading("Memoria reciente", "Ultimas notas sincronizadas con Celeste Brain.")
                         if (notes.isEmpty()) Text("Todavia no hay notas remotas cargadas.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -553,6 +550,8 @@ private fun DailyAgendaCard(
     onAskCalendar: () -> Unit,
     onCompleteReminder: (Reminder) -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
+
     CelesteCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionHeading(
@@ -565,7 +564,7 @@ private fun DailyAgendaCard(
             }
             if (events.isEmpty() && reminders.isEmpty()) {
                 Text(
-                    "Sin elementos cargados. Calendar puede seguir pendiente de autorizacion.",
+                    "No hay eventos ni recordatorios proximos.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -576,15 +575,25 @@ private fun DailyAgendaCard(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
                 ) {
-                    Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(event.summary.ifBlank { "Evento" }, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            formatSchedule(event.start),
+                            formatEventSchedule(event.start, event.end),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (event.location.isNotBlank()) {
-                            Text(event.location, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            if (event.location.isWebUrl()) {
+                                TextButton(onClick = { uriHandler.openUri(event.location) }) {
+                                    Text("Abrir evento")
+                                }
+                            } else {
+                                Text(
+                                    event.location,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                 }
@@ -611,10 +620,49 @@ private fun DailyAgendaCard(
     }
 }
 
-private fun formatSchedule(value: String): String = value
-    .replace("T", " · ")
-    .replace("Z", " UTC")
-    .take(28)
+private val scheduleLocale = Locale("es", "CO")
+private val dayFormatter = DateTimeFormatter.ofPattern("EEE d MMM", scheduleLocale)
+private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", scheduleLocale)
+
+private fun formatEventSchedule(start: String, end: String): String {
+    val startDateTime = parseDateTime(start) ?: return formatSchedule(start)
+    val endDateTime = parseDateTime(end)
+    val day = formatDay(startDateTime.toLocalDate())
+    val startTime = startDateTime.format(timeFormatter)
+    val endTime = endDateTime?.format(timeFormatter)
+    return if (!endTime.isNullOrBlank()) "$day · $startTime–$endTime" else "$day · $startTime"
+}
+
+private fun formatSchedule(value: String): String {
+    val dateTime = parseDateTime(value)
+    if (dateTime != null) {
+        return "${formatDay(dateTime.toLocalDate())} · ${dateTime.format(timeFormatter)}"
+    }
+
+    val date = runCatching { LocalDate.parse(value) }.getOrNull()
+    if (date != null) return formatDay(date)
+
+    return value
+        .replace("T", " · ")
+        .replace("Z", " UTC")
+        .take(28)
+}
+
+private fun parseDateTime(value: String) = runCatching {
+    OffsetDateTime.parse(value)
+        .atZoneSameInstant(ZoneId.systemDefault())
+}.getOrNull()
+
+private fun formatDay(date: LocalDate): String {
+    val today = LocalDate.now()
+    return when (date) {
+        today -> "Hoy"
+        today.plusDays(1) -> "Mañana"
+        else -> date.format(dayFormatter).replaceFirstChar { it.uppercase(scheduleLocale) }
+    }
+}
+
+private fun String.isWebUrl(): Boolean = startsWith("https://", ignoreCase = true) || startsWith("http://", ignoreCase = true)
 
 @Composable
 private fun NotePreview(note: Note) {
@@ -649,6 +697,7 @@ private fun SettingsCard(
                 onValueChange = { onConfigChange(config.copy(coreBaseUrl = it)) },
                 label = { Text("Celeste Core URL") },
                 placeholder = { Text("http://192.168.x.x:8000") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
@@ -656,6 +705,8 @@ private fun SettingsCard(
                 value = config.apiToken,
                 onValueChange = { onConfigChange(config.copy(apiToken = it)) },
                 label = { Text("API token") },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
@@ -664,6 +715,7 @@ private fun SettingsCard(
                 onValueChange = { onConfigChange(config.copy(pcMac = it)) },
                 label = { Text("MAC del PC") },
                 placeholder = { Text("AA:BB:CC:DD:EE:FF") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
@@ -672,6 +724,7 @@ private fun SettingsCard(
                 onValueChange = { onConfigChange(config.copy(broadcastAddress = it)) },
                 label = { Text("Broadcast") },
                 placeholder = { Text("192.168.x.255") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
@@ -679,6 +732,7 @@ private fun SettingsCard(
                 value = config.wolPort.toString(),
                 onValueChange = { value -> value.toIntOrNull()?.let { onConfigChange(config.copy(wolPort = it)) } },
                 label = { Text("Puerto WOL") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
