@@ -200,3 +200,17 @@ def test_natural_recall_pattern_requires_read_only_followup(tmp_path, monkeypatc
     )
 
     assert result is None
+
+
+def test_natural_recall_fast_path_does_not_capture_ambiguous_question(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    result = try_ollama_fast_path(
+        "No te habia dicho algo sobre la moto? Que crees que deberia hacer?",
+        router,
+        settings,
+    )
+
+    assert result is None
