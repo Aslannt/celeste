@@ -7,7 +7,13 @@ from pydantic import BaseModel, Field
 
 from app.config import Settings
 from app.security import require_token
-from app.services.reminders import ReminderNotFoundError, ReminderStore, ReminderStoreError
+from app.services.notifications import NotificationStoreError
+from app.services.reminders import (
+    ReminderNotFoundError,
+    ReminderScheduler,
+    ReminderStore,
+    ReminderStoreError,
+)
 
 
 class ReminderCreateRequest(BaseModel):
@@ -34,7 +40,7 @@ def _store() -> ReminderStore:
 def _translate_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ReminderNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
-    if isinstance(exc, ReminderStoreError):
+    if isinstance(exc, (ReminderStoreError, NotificationStoreError)):
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
@@ -62,6 +68,15 @@ def create_reminder(payload: ReminderCreateRequest) -> dict[str, object]:
             due_at=payload.due_at,
         )
     except (ValueError, ReminderStoreError) as exc:
+        raise _translate_error(exc) from exc
+
+
+@router.post("/poll")
+def poll_reminders() -> dict[str, int]:
+    settings = Settings.from_env()
+    try:
+        return ReminderScheduler(settings.brain_dir).poll_once()
+    except (ValueError, ReminderStoreError, NotificationStoreError) as exc:
         raise _translate_error(exc) from exc
 
 
