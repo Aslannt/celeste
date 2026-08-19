@@ -9,12 +9,15 @@ from app.api.assistant import router as assistant_router
 from app.api.integrations import router as integrations_router
 from app.api.notes import router as notes_router
 from app.api.notifications import router as notifications_router
+from app.api.reminders import router as reminders_router
 from app.api.status import router as status_router
 from app.config import Settings
+from app.services.calendar import GoogleCalendarClient
 from app.services.gmail import GmailClient, GmailError
 from app.services.gmail_monitor import GmailMonitor
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.notifications import NotificationStoreError
+from app.services.reminders import ReminderScheduler, ReminderStoreError
 from app.services.storage import MarkdownNoteStorage
 
 
@@ -35,11 +38,28 @@ async def _gmail_monitor_loop(settings: Settings) -> None:
         await asyncio.sleep(settings.gmail_poll_seconds)
 
 
+async def _reminder_scheduler_loop(settings: Settings) -> None:
+    scheduler = ReminderScheduler(settings.brain_dir)
+    while True:
+        try:
+            result = await asyncio.to_thread(scheduler.poll_once)
+            if result["reminders_fired"]:
+                print(
+                    "[Celeste] Reminder scheduler: "
+                    f"{result['reminders_fired']} reminder(s) fired."
+                )
+        except (ReminderStoreError, NotificationStoreError, ValueError) as exc:
+            # A damaged reminder must not take down Brain, Gmail or the assistant.
+            print(f"[Celeste] WARNING: reminder scheduler poll failed: {exc}")
+        await asyncio.sleep(settings.reminder_poll_seconds)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = Settings.from_env()
     storage = MarkdownNoteStorage(settings.brain_dir)
     gmail_monitor_task: asyncio.Task[None] | None = None
+    reminder_task: asyncio.Task[None] | None = None
 
     try:
         indexed = BrainIndex(settings.brain_dir).rebuild(storage.list(include_deleted=False))
@@ -51,6 +71,9 @@ async def lifespan(_: FastAPI):
     print(f"[Celeste] AI provider: {settings.llm_provider} ({settings.llm_model})")
     if settings.llm_provider == "openai" and not settings.openai_api_key:
         print("[Celeste] WARNING: OPENAI_API_KEY is missing; assistant chat will be unavailable.")
+
+    reminder_task = asyncio.create_task(_reminder_scheduler_loop(settings))
+    print(f"[Celeste] Persistent reminder scheduler every {settings.reminder_poll_seconds}s.")
 
     if settings.gmail_enabled:
         gmail = GmailClient(settings.gmail_credentials_file, settings.gmail_token_file)
@@ -67,21 +90,35 @@ async def lifespan(_: FastAPI):
         else:
             print("[Celeste] Gmail automatic monitoring is disabled; manual/on-demand access still works.")
 
+    if settings.calendar_enabled:
+        calendar = GoogleCalendarClient(
+            settings.calendar_credentials_file,
+            settings.calendar_token_file,
+        )
+        calendar_state = calendar.status(enabled=True)
+        print(
+            "[Celeste] Calendar integration enabled: "
+            f"authorized={calendar_state['authorized']} credentials={calendar_state['credentials_present']}"
+        )
+        if not calendar_state["authorized"]:
+            print("[Celeste] Calendar needs local OAuth authorization before calendar tools can run.")
+
     if settings.api_token == "celeste-local-dev":
         print("[Celeste] WARNING: using development API token. LAN testing only.")
 
     try:
         yield
     finally:
-        if gmail_monitor_task is not None:
-            gmail_monitor_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await gmail_monitor_task
+        for task in (gmail_monitor_task, reminder_task):
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
 
 app = FastAPI(
     title="Celeste Core",
-    version="0.4.1",
+    version="0.4.2",
     description="Local core service for the Celeste personal assistant.",
     lifespan=lifespan,
 )
@@ -91,6 +128,7 @@ app.include_router(notes_router)
 app.include_router(assistant_router)
 app.include_router(integrations_router)
 app.include_router(notifications_router)
+app.include_router(reminders_router)
 
 
 @app.get("/")
@@ -101,5 +139,7 @@ def root() -> dict[str, str]:
         "status": "/api/v1/status",
         "assistant": "/api/v1/assistant/chat",
         "gmail": "/api/v1/integrations/gmail/status",
+        "calendar": "/api/v1/integrations/calendar/status",
         "notifications": "/api/v1/notifications",
+        "reminders": "/api/v1/reminders",
     }
