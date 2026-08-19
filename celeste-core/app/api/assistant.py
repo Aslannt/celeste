@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.config import Settings
 from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
+from app.services.fast_paths import try_ollama_fast_path
 from app.services.tools import ToolRouter
 
 
@@ -72,6 +73,11 @@ def list_tool_audit(
 def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
     settings = Settings.from_env()
     router_service = ToolRouter(settings)
+
+    fast_path = try_ollama_fast_path(payload.message, router_service, settings)
+    if fast_path is not None:
+        return AssistantChatResponse.model_validate(fast_path.to_dict())
+
     try:
         provider = build_provider(settings)
         result = provider.answer(payload.message, router_service)
