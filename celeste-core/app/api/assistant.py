@@ -10,7 +10,7 @@ from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
 from app.services.fast_paths import try_ollama_fast_path
 from app.services.llm_tool_scope import scope_router_for_message
-from app.services.response_guard import guard_memory_reply
+from app.services.response_guard import guard_memory_reply, sanitize_public_events
 from app.services.tools import ToolRouter
 
 
@@ -108,6 +108,7 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
         guarded_performance["response_guard"] = "memory_grounding"
         result_dict["performance"] = guarded_performance
 
+    result_dict["events"] = sanitize_public_events(result_dict.get("events"))
     return AssistantChatResponse.model_validate(result_dict)
 
 
