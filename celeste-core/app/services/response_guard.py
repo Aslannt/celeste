@@ -106,3 +106,34 @@ def guard_memory_reply(
         return reply, False
 
     return _grounded_memory_reply(notes, priority_requested=priority_requested), True
+
+
+def sanitize_public_events(events: Any) -> Any:
+    """Remove provider-only metadata before assistant events leave Celeste Core."""
+
+    if not isinstance(events, list):
+        return events
+
+    sanitized: list[Any] = []
+    for event in events:
+        if not isinstance(event, dict):
+            sanitized.append(event)
+            continue
+
+        public_event = dict(event)
+        output = public_event.get("output")
+        if isinstance(output, list):
+            public_output: list[Any] = []
+            for item in output:
+                if isinstance(item, dict):
+                    public_item = {
+                        key: value
+                        for key, value in item.items()
+                        if not str(key).startswith("_celeste_")
+                    }
+                    public_output.append(public_item)
+                else:
+                    public_output.append(item)
+            public_event["output"] = public_output
+        sanitized.append(public_event)
+    return sanitized
