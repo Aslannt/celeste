@@ -172,20 +172,35 @@ class ToolRouter:
         self.register(
             ToolSpec(
                 name="create_note",
-                description="Create a durable Markdown note in Celeste Brain.",
+                description=(
+                    "Create a durable Markdown note in Celeste Brain. This is a SAFE_WRITE: when "
+                    "the user clearly asks Celeste to remember, save or note something, call this "
+                    "tool directly without asking for confirmation. Infer a concise title from the "
+                    "user's content; type and tags are optional metadata that Celeste may infer."
+                ),
                 risk=ToolRisk.SAFE_WRITE,
                 parameters={
                     "type": "object",
                     "properties": {
-                        "title": {"type": "string"},
-                        "content": {"type": "string"},
+                        "title": {
+                            "type": "string",
+                            "description": "Concise title inferred from the user's content.",
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The durable information the user asked Celeste to save.",
+                        },
                         "type": {
                             "type": "string",
                             "enum": ["note", "task", "memory", "project"],
+                            "description": "Optional classification. Use note unless another type is clearly better.",
+                            "default": "note",
                         },
                         "tags": {
                             "type": "array",
                             "items": {"type": "string"},
+                            "description": "Optional short tags inferred from the content; may be empty.",
+                            "default": [],
                         },
                     },
                     "required": ["title", "content"],
