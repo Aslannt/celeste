@@ -40,13 +40,35 @@
 
 ## V0.4 - IA y Tool Router
 
-- [ ] Abstraccion de proveedores LLM
-- [ ] Tool Router con niveles READ / SAFE_WRITE / CONFIRM / RESTRICTED
-- [ ] `create_note`
-- [ ] `search_memory`
-- [ ] `get_pc_status`
-- [ ] `wake_pc`
-- [ ] Confirmaciones de acciones sensibles
+- [x] Abstraccion de proveedores (`local_rules` / `openai`)
+- [x] Tool Router con niveles READ / SAFE_WRITE / CONFIRM / RESTRICTED
+- [x] `create_note`
+- [x] `search_memory`
+- [x] `get_pc_status`
+- [x] Infraestructura generica de confirmaciones
+- [x] Endpoint `POST /api/v1/assistant/chat`
+- [x] Interfaz Android para hablar con Celeste
+- [ ] Validar proveedor local y herramientas en PC/Android reales
+- [ ] Configurar y validar un proveedor LLM real
+- [ ] `wake_pc` como herramienta cuando Core pueda ejecutarse fuera del PC objetivo
+
+## V0.4.1 - Gmail
+
+- [ ] OAuth 2.0 sin guardar contrasena de Gmail
+- [ ] Leer correos recientes/no leidos
+- [ ] Resumir y priorizar correos entrantes
+- [ ] Preparar borradores de respuesta
+- [ ] Preguntar antes de enviar
+- [ ] `send_email` clasificado como CONFIRM
+- [ ] Notificaciones/sincronizacion incremental
+
+## V0.4.2 - LinkedIn y otros conectores
+
+- [ ] Evaluar acceso oficial disponible para LinkedIn Messaging
+- [ ] No depender de scraping ni automatizacion fragil del navegador para mensajeria
+- [ ] Si existe acceso oficial adecuado: leer mensajes y preparar borradores
+- [ ] Envio de mensajes siempre con confirmacion inicialmente
+- [ ] Reutilizar el mismo modelo de conectores y Tool Router
 
 ## V0.5 - voz y moto
 

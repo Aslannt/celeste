@@ -9,6 +9,20 @@ import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
+data class AssistantEvent(
+    val tool: String,
+    val risk: String,
+    val status: String,
+    val confirmationId: String? = null,
+    val summary: String? = null,
+)
+
+data class AssistantReply(
+    val reply: String,
+    val provider: String,
+    val events: List<AssistantEvent>,
+)
+
 class CelesteApi(private val config: CelesteConfig) {
 
     fun getStatus(): CoreStatus {
@@ -39,6 +53,66 @@ class CelesteApi(private val config: CelesteConfig) {
         return parseNotes(text)
     }
 
+    fun askCeleste(message: String): AssistantReply {
+        val body = JSONObject().apply { put("message", message) }
+        val json = request(
+            "/api/v1/assistant/chat",
+            "POST",
+            authenticated = true,
+            body = body.toString(),
+            readTimeoutMs = 60_000,
+        )
+        val eventsJson = json.optJSONArray("events") ?: JSONArray()
+        val events = (0 until eventsJson.length()).map { index ->
+            parseAssistantEvent(eventsJson.getJSONObject(index))
+        }
+        return AssistantReply(
+            reply = json.getString("reply"),
+            provider = json.getString("provider"),
+            events = events,
+        )
+    }
+
+    fun listPendingAssistantActions(): List<AssistantEvent> {
+        val text = requestText(
+            "/api/v1/assistant/confirmations",
+            "GET",
+            authenticated = true,
+        )
+        val array = JSONArray(text)
+        return (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            AssistantEvent(
+                tool = item.getString("tool"),
+                risk = "CONFIRM",
+                status = "confirmation_required",
+                confirmationId = item.getString("confirmation_id"),
+                summary = item.optString("summary").takeIf { it.isNotBlank() },
+            )
+        }
+    }
+
+    fun confirmAssistantAction(confirmationId: String): AssistantEvent {
+        val encoded = URLEncoder.encode(confirmationId, StandardCharsets.UTF_8.toString())
+        val json = request(
+            "/api/v1/assistant/confirm/$encoded",
+            "POST",
+            authenticated = true,
+            readTimeoutMs = 60_000,
+        )
+        return parseAssistantEvent(json)
+    }
+
+    fun cancelAssistantAction(confirmationId: String): AssistantEvent {
+        val encoded = URLEncoder.encode(confirmationId, StandardCharsets.UTF_8.toString())
+        val json = request(
+            "/api/v1/assistant/confirm/$encoded",
+            "DELETE",
+            authenticated = true,
+        )
+        return parseAssistantEvent(json)
+    }
+
     fun createNote(
         title: String,
         content: String,
@@ -67,7 +141,10 @@ class CelesteApi(private val config: CelesteConfig) {
         authenticated: Boolean,
         body: String? = null,
         idempotencyKey: String? = null,
-    ): JSONObject = JSONObject(requestText(path, method, authenticated, body, idempotencyKey))
+        readTimeoutMs: Int = 5_000,
+    ): JSONObject = JSONObject(
+        requestText(path, method, authenticated, body, idempotencyKey, readTimeoutMs),
+    )
 
     private fun requestText(
         path: String,
@@ -75,12 +152,13 @@ class CelesteApi(private val config: CelesteConfig) {
         authenticated: Boolean,
         body: String? = null,
         idempotencyKey: String? = null,
+        readTimeoutMs: Int = 5_000,
     ): String {
         require(config.coreBaseUrl.isNotBlank()) { "Configura la URL de Celeste Core." }
         val connection = URL(config.coreBaseUrl.trimEnd('/') + path).openConnection() as HttpURLConnection
         connection.requestMethod = method
         connection.connectTimeout = 2500
-        connection.readTimeout = 5000
+        connection.readTimeout = readTimeoutMs
         connection.setRequestProperty("Accept", "application/json")
         if (authenticated) connection.setRequestProperty("X-Celeste-Token", config.apiToken)
         if (!idempotencyKey.isNullOrBlank()) {
@@ -104,6 +182,26 @@ class CelesteApi(private val config: CelesteConfig) {
             throw IllegalStateException("Celeste Core respondio HTTP $status: $text")
         }
         return text
+    }
+
+    private fun parseAssistantEvent(json: JSONObject): AssistantEvent {
+        val confirmationId = if (json.isNull("confirmation_id")) {
+            null
+        } else {
+            json.optString("confirmation_id").takeIf { it.isNotBlank() }
+        }
+        val summary = if (json.isNull("summary")) {
+            null
+        } else {
+            json.optString("summary").takeIf { it.isNotBlank() }
+        }
+        return AssistantEvent(
+            tool = json.getString("tool"),
+            risk = json.getString("risk"),
+            status = json.getString("status"),
+            confirmationId = confirmationId,
+            summary = summary,
+        )
     }
 
     private fun parseNotes(text: String): List<Note> {

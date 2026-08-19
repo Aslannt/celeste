@@ -1,43 +1,46 @@
-# Celeste Android V0.3.0
+# Celeste Android V0.4.0
 
-Cliente Android de Celeste para control del PC y memoria personal.
+Cliente Android de Celeste para control del PC, memoria personal y conversacion con Celeste Core.
 
 ## Incluye
 
 - Estado de Celeste Core por LAN.
 - Wake-on-LAN.
 - Crear y listar notas en Celeste Brain.
-- Busqueda de notas por titulo, contenido y tags mediante el indice FTS5 del Core.
+- Busqueda de notas por titulo, contenido y tags mediante SQLite FTS5.
+- Tarjeta `Hablar con Celeste` conectada al nuevo endpoint del asistente.
+- Visualizacion del proveedor usado y de las herramientas ejecutadas.
 - Configuracion local persistente.
 - Cola offline de notas con Room.
 - Sincronizacion inmediata si Core esta disponible.
 - Reintento automatico de notas pendientes mientras la app esta activa.
-- Reintento al abrir la app y al pulsar `Actualizar`.
 - Sincronizacion idempotente para evitar notas duplicadas en reintentos.
 
-## Busqueda V0.3
+## Asistente V0.4
 
-La app incluye la tarjeta `Buscar en Celeste Brain`. La busqueda se ejecuta en Celeste Core contra un indice SQLite FTS5 reconstruible.
+La app envia el mensaje a:
 
-Markdown sigue siendo la fuente de verdad. Android recibe como resultado las notas originales leidas nuevamente desde sus archivos Markdown.
+```text
+POST /api/v1/assistant/chat
+```
 
-La busqueda V0.3 requiere que Core este en linea. El cache offline completo y la busqueda local en Android quedan fuera de este incremento.
+Celeste Core selecciona el proveedor configurado y todas las capacidades pasan por el Tool Router. Android no entrega acceso directo al sistema ni al Brain al proveedor de IA.
 
-## Notas offline
+Con el proveedor por defecto `local_rules` puedes probar sin Internet ni clave externa:
 
-Al guardar una nota, Celeste la escribe primero en la base de datos Room del telefono.
+```text
+Busca moto
+Recuerda que comprar filtro de aceite
+Cual es el estado del PC?
+```
 
-- Si Celeste Core esta disponible, la nota se envia al Core y se elimina de la cola local despues de recibir una respuesta exitosa.
-- Si el PC/Core esta apagado o no se puede alcanzar, la nota permanece en `Pendientes de sincronizar`.
-- Cuando Core vuelve, la app reintenta y la nota termina en `CelesteBrain/notes` como Markdown.
+Cuando Core se configure con un LLM real, la misma interfaz podra interpretar lenguaje mucho mas libre sin cambiar las herramientas reales disponibles.
 
-## Idempotencia
+## Busqueda y notas
 
-Cada nota pendiente tiene un `localId` UUID generado una sola vez en Android. Ese mismo valor se reutiliza como `X-Celeste-Idempotency-Key` en cada intento de sincronizacion.
+Markdown sigue siendo la fuente de verdad. El indice SQLite FTS5 es reconstruible y se mantiene sincronizado cuando se crean, editan o eliminan logicamente notas.
 
-Celeste Core guarda la clave en el frontmatter Markdown. Si recibe el mismo intento otra vez con el mismo contenido, devuelve la nota existente en vez de crear un segundo archivo. Si una clave ya usada llega con contenido distinto, Core responde HTTP 409.
-
-Room todavia no cachea todas las notas remotas ni hace sincronizacion bidireccional/conflictos. Se usa como cola durable para nuevas notas creadas desde Android.
+Al guardar una nota manual desde Android, se escribe primero en la cola Room. Si Core esta disponible se sincroniza inmediatamente; si no, permanece pendiente hasta que Core vuelva.
 
 ## Configuracion inicial
 
@@ -51,11 +54,12 @@ En la app introduce:
 
 La app usa HTTP sin cifrar solo para pruebas dentro de la LAN. No expongas Celeste Core a Internet con esta configuracion.
 
-## Prueba V0.3
+## Prueba V0.4
 
-1. Ejecuta los tests de Core y confirma que FTS5 funciona.
-2. Compila Android V0.3.0 e instalalo sobre la version actual.
-3. Arranca Core y pulsa `Actualizar` en Android.
-4. Busca una palabra que exista en el titulo o contenido de una nota conocida.
-5. Busca un tag conocido.
-6. Confirma que una nota nueva aparece en busqueda inmediatamente despues de sincronizarse.
+1. Ejecuta los tests de Core.
+2. Arranca Core 0.4.0 con `CELESTE_LLM_PROVIDER=local_rules`.
+3. Instala Android 0.4.0.
+4. En `Hablar con Celeste`, prueba `Busca moto` y confirma que usa `search_memory (READ)`.
+5. Prueba `Recuerda que ...` y confirma que usa `create_note (SAFE_WRITE)` y aparece un Markdown nuevo.
+6. Prueba `Cual es el estado del PC?` y confirma que usa `get_pc_status (READ)`.
+7. Solo despues de validar lo anterior, configura un proveedor LLM real y repite las pruebas con lenguaje natural.

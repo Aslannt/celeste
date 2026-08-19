@@ -10,8 +10,9 @@ Celeste es un asistente personal distribuido en construccion. La arquitectura ac
 - Token local privado para la API.
 - Celeste Brain con notas Markdown + YAML frontmatter.
 - Notas offline en Android con Room y sincronizacion idempotente.
-- V0.3: indice SQLite + FTS5 reconstruible y busqueda desde Android.
-- IA, voz, Home Assistant y servidor 24/7 siguen fuera del alcance actual.
+- Indice SQLite + FTS5 reconstruible y busqueda desde Android.
+- V0.4 en desarrollo: proveedor de IA intercambiable + Tool Router con permisos.
+- Voz, Home Assistant y servidor 24/7 siguen en fases posteriores.
 
 ## Principio de Celeste Brain
 
@@ -23,12 +24,30 @@ CelesteBrain/.celeste/brain-index.sqlite3
 
 Ese archivo es cache reconstruible: puede borrarse y Celeste Core lo vuelve a generar desde `CelesteBrain/notes` al arrancar.
 
+## IA y herramientas
+
+Celeste no entrega acceso directo al sistema a un LLM. Los proveedores solo pueden solicitar herramientas registradas por el Tool Router, clasificadas como:
+
+```text
+READ / SAFE_WRITE / CONFIRM / RESTRICTED
+```
+
+V0.4 incluye inicialmente:
+
+```text
+search_memory   READ
+create_note     SAFE_WRITE
+get_pc_status   READ
+```
+
+El proveedor por defecto es `local_rules`, que permite probar todo sin Internet ni una API externa. El proveedor `openai` se habilita localmente mediante variables en `celeste-core/.env`; las claves nunca se versionan. Consulta `docs/AI_TOOL_ROUTER.md`.
+
 ## Estructura
 
 ```text
 celeste/
-├── celeste-core/       # API local, Brain index y servicios
-├── celeste-android/    # cliente Android, WOL y memoria offline
+├── celeste-core/       # API local, Brain, Tool Router y proveedores de IA
+├── celeste-android/    # cliente Android, WOL, memoria offline y chat
 ├── docs/               # decisiones, arquitectura y roadmap
 └── CelesteBrain/       # datos personales; no se versiona
 ```
@@ -50,12 +69,15 @@ GET  /api/v1/notes
 POST /api/v1/notes
 GET  /api/v1/notes/search?q=<texto>
 POST /api/v1/notes/index/rebuild
+GET  /api/v1/assistant/tools
+POST /api/v1/assistant/chat
+POST /api/v1/assistant/confirm/{confirmation_id}
 ```
 
 Swagger esta disponible en `http://127.0.0.1:8000/docs`.
 
-Las operaciones de notas requieren `X-Celeste-Token`. Usa `configure_local_security.ps1` para crear la configuracion privada local en `.env`; no subas ese archivo al repositorio.
+Las operaciones privadas requieren `X-Celeste-Token`. Usa `configure_local_security.ps1` para crear la configuracion privada local en `.env`; no subas ese archivo al repositorio.
 
-## Siguiente etapa
+## Conectores siguientes
 
-Despues de validar V0.3 en el PC y telefono reales, el siguiente bloque es la abstraccion de proveedores de IA y el Tool Router. La busqueda lexical FTS5 sera la primera implementacion de `search_memory`; embeddings/RAG se evaluaran mas adelante y no reemplazaran Markdown como fuente de verdad.
+Despues de validar V0.4, Gmail sera el primer conector externo: lectura, resumen, borradores y envio solo despues de confirmacion. LinkedIn se evaluara segun el acceso oficial disponible para mensajeria, evitando scraping o automatizacion fragil del navegador.
