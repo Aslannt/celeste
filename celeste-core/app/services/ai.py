@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import unicodedata
@@ -439,10 +440,23 @@ class OllamaProvider:
 
     name = "ollama"
 
-    def __init__(self, base_url: str, model: str, timeout_seconds: float, think: bool = False):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout_seconds: float,
+        think: bool = False,
+        keep_alive: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.think = think
+        configured_keep_alive = (
+            keep_alive
+            if keep_alive is not None
+            else os.getenv("CELESTE_OLLAMA_KEEP_ALIVE", "30m")
+        )
+        self.keep_alive = str(configured_keep_alive).strip() or "30m"
         self.client = httpx.Client(base_url=self.base_url, timeout=timeout_seconds)
 
     def answer(self, message: str, router: ToolRouter) -> AssistantResult:
@@ -616,7 +630,7 @@ class OllamaProvider:
                     "tools": tools,
                     "stream": False,
                     "think": self.think,
-                    "keep_alive": "5m",
+                    "keep_alive": self.keep_alive,
                 },
             )
             response.raise_for_status()
