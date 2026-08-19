@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.config import Settings
+from app.services.response_guard import grounded_memory_priority_reply
 from app.services.tools import ToolExecution, ToolRouter
 
 
@@ -600,6 +601,16 @@ class OllamaProvider:
             if pending:
                 return self._result(
                     _confirmation_reply(pending),
+                    events,
+                    started,
+                    rounds,
+                    tool_timings,
+                )
+
+            grounded_reply = grounded_memory_priority_reply(message, events)
+            if grounded_reply is not None:
+                return self._result(
+                    grounded_reply,
                     events,
                     started,
                     rounds,
