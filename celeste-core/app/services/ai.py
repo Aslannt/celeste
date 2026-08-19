@@ -60,7 +60,8 @@ Keep answers concise and useful.
 
 _CELESTE_CONVERSATION_INSTRUCTIONS = """You are Celeste, a private personal assistant.
 Answer in Spanish unless the user clearly uses another language.
-Be concise, accurate and useful.
+Be concise, accurate and useful. Use the minimum useful length for ordinary questions.
+If the user asks for a specific number of sentences or a brief answer, keep each sentence short and do not add a preamble or closing offer.
 No tools are available in this conversational mode. Never claim that you saved, changed, deleted, scheduled, remembered, or executed anything.
 Never promise a future reminder or notification.
 """
@@ -83,9 +84,29 @@ _EXPLICIT_DELETE_PATTERNS = [
 ]
 
 
+_SHORT_SENTENCE_LIMITS = (
+    (re.compile(r"\b(?:(?:en\s+)?(?:una|1)\s+frase|one sentence)\b"), 48),
+    (re.compile(r"\b(?:(?:en\s+)?(?:dos|2)\s+frases|two sentences)\b"), 72),
+    (re.compile(r"\b(?:(?:en\s+)?(?:tres|3)\s+frases|three sentences)\b"), 96),
+)
+_SHORT_RESPONSE_CUE = re.compile(
+    r"\b(?:breve|brevemente|conciso|concisa|corto|corta|short answer|briefly|concise)\b"
+)
+
+
 def _plain(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
     return "".join(char for char in decomposed if not unicodedata.combining(char)).casefold().strip()
+
+
+def _conversation_num_predict(message: str) -> int | None:
+    normalized = _plain(message)
+    for pattern, limit in _SHORT_SENTENCE_LIMITS:
+        if pattern.search(normalized):
+            return limit
+    if _SHORT_RESPONSE_CUE.search(normalized):
+        return 96
+    return None
 
 
 def _explicit_create_arguments(message: str) -> dict[str, Any] | None:
@@ -202,11 +223,14 @@ def _ollama_round_performance(
     payload: dict[str, Any],
     round_number: int,
     wall_ms: float,
+    num_predict_limit: int | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "round": round_number,
         "wall_ms": round(wall_ms, 2),
     }
+    if num_predict_limit is not None:
+        result["num_predict_limit"] = num_predict_limit
     duration_fields = {
         "total_duration": "server_total_ms",
         "load_duration": "load_ms",
@@ -481,6 +505,11 @@ class OllamaProvider:
             if raw_tool_schemas
             else _CELESTE_CONVERSATION_INSTRUCTIONS
         )
+        num_predict_limit = (
+            _conversation_num_predict(message)
+            if not raw_tool_schemas
+            else None
+        )
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": instructions},
             {"role": "user", "content": message},
@@ -489,12 +518,17 @@ class OllamaProvider:
 
         for round_index in range(4):
             round_started = time.perf_counter()
-            response = self._chat(messages, tools)
+            response = self._chat(
+                messages,
+                tools,
+                num_predict_limit=num_predict_limit,
+            )
             rounds.append(
                 _ollama_round_performance(
                     response,
                     round_index + 1,
                     (time.perf_counter() - round_started) * 1000,
+                    num_predict_limit=num_predict_limit,
                 )
             )
             raw_message = response.get("message")
@@ -634,18 +668,28 @@ class OllamaProvider:
             },
         )
 
-    def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+    def _chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        num_predict_limit: int | None = None,
+    ) -> dict[str, Any]:
+        request_payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            "think": self.think,
+            "keep_alive": self.keep_alive,
+        }
+        if num_predict_limit is not None:
+            request_payload["options"] = {"num_predict": num_predict_limit}
+
         try:
             response = self.client.post(
                 "/api/chat",
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "tools": tools,
-                    "stream": False,
-                    "think": self.think,
-                    "keep_alive": self.keep_alive,
-                },
+                json=request_payload,
             )
             response.raise_for_status()
             payload = response.json()

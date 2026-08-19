@@ -57,30 +57,46 @@ def _provider(settings: Settings, monkeypatch, calls: list[dict]) -> OllamaProvi
     )
 
 
-def test_tool_free_conversation_uses_compact_system_prompt(tmp_path, monkeypatch):
+def test_tool_free_conversation_uses_compact_system_prompt_and_short_budget(tmp_path, monkeypatch):
     settings = _settings(tmp_path, monkeypatch)
     calls: list[dict] = []
     router = ToolRouter(settings)
-    view = scope_router_for_message(
-        router,
-        "Explicame en dos frases la diferencia entre memoria RAM y almacenamiento.",
-    )
+    message = "Explicame en dos frases la diferencia entre memoria RAM y almacenamiento."
+    view = scope_router_for_message(router, message)
 
-    result = _provider(settings, monkeypatch, calls).answer(
-        "Explicame en dos frases la diferencia entre memoria RAM y almacenamiento.",
-        view,
-    )
+    result = _provider(settings, monkeypatch, calls).answer(message, view)
 
     assert result.reply == "Respuesta de prueba"
     assert len(calls) == 1
     assert calls[0]["json"]["tools"] == []
+    assert calls[0]["json"]["options"] == {"num_predict": 72}
+    assert result.performance is not None
+    assert result.performance["ollama_rounds"][0]["num_predict_limit"] == 72
     system_prompt = calls[0]["json"]["messages"][0]["content"]
     assert system_prompt == _CELESTE_CONVERSATION_INSTRUCTIONS
     assert len(system_prompt) < len(_CELESTE_INSTRUCTIONS)
     assert "No tools are available" in system_prompt
+    assert "keep each sentence short" in system_prompt
 
 
-def test_personal_memory_request_keeps_full_system_prompt_and_tools(tmp_path, monkeypatch):
+def test_generic_tool_free_conversation_is_not_hard_capped(tmp_path, monkeypatch):
+    settings = _settings(tmp_path, monkeypatch)
+    calls: list[dict] = []
+    router = ToolRouter(settings)
+    message = "Explicame con detalle como funciona una base de datos relacional."
+    view = scope_router_for_message(router, message)
+
+    result = _provider(settings, monkeypatch, calls).answer(message, view)
+
+    assert result.reply == "Respuesta de prueba"
+    assert len(calls) == 1
+    assert calls[0]["json"]["tools"] == []
+    assert "options" not in calls[0]["json"]
+    assert result.performance is not None
+    assert "num_predict_limit" not in result.performance["ollama_rounds"][0]
+
+
+def test_personal_memory_request_keeps_full_system_prompt_and_tools_without_budget(tmp_path, monkeypatch):
     settings = _settings(tmp_path, monkeypatch)
     calls: list[dict] = []
     router = ToolRouter(settings)
@@ -94,5 +110,6 @@ def test_personal_memory_request_keeps_full_system_prompt_and_tools(tmp_path, mo
     assert result.reply == "Respuesta de prueba"
     assert len(calls) == 1
     assert calls[0]["json"]["tools"]
+    assert "options" not in calls[0]["json"]
     system_prompt = calls[0]["json"]["messages"][0]["content"]
     assert system_prompt == _CELESTE_INSTRUCTIONS
