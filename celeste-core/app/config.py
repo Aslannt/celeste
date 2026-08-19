@@ -28,7 +28,11 @@ class Settings:
     gmail_credentials_file: Path
     gmail_token_file: Path
     gmail_poll_seconds: int
-    version: str = "0.4.1"
+    calendar_enabled: bool
+    calendar_credentials_file: Path
+    calendar_token_file: Path
+    reminder_poll_seconds: int
+    version: str = "0.4.2"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -97,6 +101,30 @@ class Settings:
             else max(60, min(requested_poll_seconds, 3600))
         )
 
+        # Calendar reuses the same Desktop OAuth client credentials by default,
+        # but has its own token because its least-privilege scope differs from Gmail.
+        calendar_enabled = _env_bool("CELESTE_CALENDAR_ENABLED", False)
+        calendar_credentials_file = Path(
+            os.getenv(
+                "CELESTE_CALENDAR_CREDENTIALS_FILE",
+                str(gmail_credentials_file),
+            )
+        ).expanduser()
+        calendar_token_file = Path(
+            os.getenv(
+                "CELESTE_CALENDAR_TOKEN_FILE",
+                str(secrets_dir / "calendar-token.json"),
+            )
+        ).expanduser()
+
+        try:
+            requested_reminder_poll = int(
+                os.getenv("CELESTE_REMINDER_POLL_SECONDS", "2")
+            )
+        except ValueError:
+            requested_reminder_poll = 2
+        reminder_poll_seconds = max(1, min(requested_reminder_poll, 60))
+
         return cls(
             api_token=api_token,
             brain_dir=brain_dir,
@@ -110,4 +138,8 @@ class Settings:
             gmail_credentials_file=gmail_credentials_file,
             gmail_token_file=gmail_token_file,
             gmail_poll_seconds=gmail_poll_seconds,
+            calendar_enabled=calendar_enabled,
+            calendar_credentials_file=calendar_credentials_file,
+            calendar_token_file=calendar_token_file,
+            reminder_poll_seconds=reminder_poll_seconds,
         )
