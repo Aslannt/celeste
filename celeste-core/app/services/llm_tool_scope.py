@@ -9,8 +9,9 @@ from app.services.tools import ToolExecution, ToolRouter
 
 # This selector is deliberately conservative. A false positive only costs prompt
 # tokens by keeping tools available; a false negative could prevent Celeste from
-# consulting durable memory. Cues should therefore describe Celeste capabilities
-# or personal context, not generic concepts such as computer "memoria RAM".
+# consulting durable memory or the real scheduler/calendar. Cues should describe
+# Celeste capabilities or personal context, not generic concepts such as computer
+# "memoria RAM".
 _TOOL_CUES = (
     "brain",
     "nota",
@@ -23,6 +24,24 @@ _TOOL_CUES = (
     "pendientes",
     "tarea",
     "tareas",
+    "recordatorio",
+    "recordatorios",
+    "avisame",
+    "avisa",
+    "alarma",
+    "agenda",
+    "calendario",
+    "calendar",
+    "evento",
+    "eventos",
+    "cita",
+    "citas",
+    "reunion",
+    "reuniones",
+    "programa",
+    "programar",
+    "reprograma",
+    "reprogramar",
     "guarda",
     "guardar",
     "guardado",
@@ -80,7 +99,8 @@ _SEARCH_MEMORY_RESULT_CONTEXT = (
     "All search results are stored notes/tasks only, not schedules. Never describe them as "
     "scheduled/programmed reminders or claim a notification will occur. If prioritizing or "
     "giving advice, use only facts present in the retrieved title/content/tags; do not invent "
-    "technical or domain facts."
+    "technical or domain facts. A separate scheduler tool result is required to claim a real "
+    "future notification exists."
 )
 
 
