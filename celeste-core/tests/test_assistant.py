@@ -97,7 +97,7 @@ def test_local_assistant_reads_pc_status(tmp_path, monkeypatch):
     body = response.json()
     assert body["events"][0]["tool"] == "get_pc_status"
     assert body["events"][0]["status"] == "executed"
-    assert body["events"][0]["output"]["version"] == "0.4.1"
+    assert body["events"][0]["output"]["version"] == "0.4.2"
 
 
 def test_confirm_tool_never_executes_before_confirmation(tmp_path, monkeypatch):
