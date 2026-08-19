@@ -90,9 +90,10 @@ _PERSONAL_MEMORY_PATTERNS = (
 _SEARCH_MEMORY_HONESTY_SUFFIX = (
     " Results are stored notes/tasks, not schedules. A title, type, tag, date or reminder "
     "wording does not prove that a future notification is scheduled. Do not call an item "
-    "scheduled unless a real reminder/calendar tool is available and returned status=executed. "
-    "When the user asks for prioritization or advice, reason only from facts present in the "
-    "retrieved results; do not invent technical or domain facts."
+    "scheduled or offer a real reminder unless a scheduling tool is available and returned "
+    "status=executed. A reminder/calendar tool is such a scheduling tool only when it actually "
+    "executes successfully. When the user asks for prioritization or advice, reason only from "
+    "facts present in the retrieved results; do not invent technical or domain facts."
 )
 
 _SEARCH_MEMORY_RESULT_CONTEXT = (
