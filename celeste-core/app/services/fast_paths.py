@@ -33,6 +33,7 @@ _SEARCH_PATTERNS = [
         r"^(?:que recuerdas|que sabes) (?:de|sobre) (.+?)"
         r"(?: busca (?:en )?(?:mi )?memoria)?$"
     ),
+    re.compile(r"^no te habia dicho que (.+?) revisa si recuerdas algo$"),
 ]
 
 _MUTATION_WORDS = (
