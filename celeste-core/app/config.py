@@ -33,6 +33,7 @@ class Settings:
     calendar_token_file: Path
     calendar_id: str
     calendar_time_zone: str
+    reminder_poll_seconds: int
     version: str = "0.4.2"
 
     @classmethod
@@ -121,6 +122,14 @@ class Settings:
             or "America/Bogota"
         )
 
+        try:
+            reminder_poll_seconds = int(
+                os.getenv("CELESTE_REMINDER_POLL_SECONDS", "30")
+            )
+        except ValueError:
+            reminder_poll_seconds = 30
+        reminder_poll_seconds = max(5, min(reminder_poll_seconds, 300))
+
         return cls(
             api_token=api_token,
             brain_dir=brain_dir,
@@ -139,4 +148,5 @@ class Settings:
             calendar_token_file=calendar_token_file,
             calendar_id=calendar_id,
             calendar_time_zone=calendar_time_zone,
+            reminder_poll_seconds=reminder_poll_seconds,
         )
