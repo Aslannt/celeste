@@ -5,6 +5,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -36,6 +37,10 @@ data class CelesteNotification(
 )
 
 class CelesteApi(private val config: CelesteConfig) {
+
+    companion object {
+        private const val ASSISTANT_READ_TIMEOUT_MS = 270_000
+    }
 
     fun getStatus(): CoreStatus {
         val json = request("/api/v1/status", "GET", authenticated = false)
@@ -147,23 +152,31 @@ class CelesteApi(private val config: CelesteConfig) {
     }
 
     fun askCeleste(message: String): AssistantReply {
-        val body = JSONObject().apply { put("message", message) }
-        val json = request(
-            "/api/v1/assistant/chat",
-            "POST",
-            authenticated = true,
-            body = body.toString(),
-            readTimeoutMs = 60_000,
-        )
-        val eventsJson = json.optJSONArray("events") ?: JSONArray()
-        val events = (0 until eventsJson.length()).map { index ->
-            parseAssistantEvent(eventsJson.getJSONObject(index))
+        return try {
+            val body = JSONObject().apply { put("message", message) }
+            val json = request(
+                "/api/v1/assistant/chat",
+                "POST",
+                authenticated = true,
+                body = body.toString(),
+                readTimeoutMs = ASSISTANT_READ_TIMEOUT_MS,
+            )
+            val eventsJson = json.optJSONArray("events") ?: JSONArray()
+            val events = (0 until eventsJson.length()).map { index ->
+                parseAssistantEvent(eventsJson.getJSONObject(index))
+            }
+            AssistantReply(
+                reply = json.getString("reply"),
+                provider = json.getString("provider"),
+                events = events,
+            )
+        } catch (error: Exception) {
+            AssistantReply(
+                reply = assistantFailureMessage(error),
+                provider = "",
+                events = emptyList(),
+            )
         }
-        return AssistantReply(
-            reply = json.getString("reply"),
-            provider = json.getString("provider"),
-            events = events,
-        )
     }
 
     fun listPendingAssistantActions(): List<AssistantEvent> {
@@ -305,6 +318,24 @@ class CelesteApi(private val config: CelesteConfig) {
             throw IllegalStateException("Celeste Core respondio HTTP $status: $text")
         }
         return text
+    }
+
+    private fun assistantFailureMessage(error: Exception): String {
+        val detail = error.message.orEmpty()
+        return when {
+            error is SocketTimeoutException -> (
+                "Celeste esta tardando mas de lo esperado. La solicitud puede seguir procesandose " +
+                    "en Core; espera un momento antes de enviarla de nuevo, especialmente si pediste " +
+                    "crear o modificar algo."
+            )
+            "HTTP 401" in detail -> "La app no pudo autenticarse con Celeste Core. Revisa el API token en Configuracion local."
+            "HTTP 403" in detail -> "Celeste Core rechazo esta solicitud por permisos."
+            "HTTP 500" in detail -> (
+                "Celeste Core recibio la consulta, pero no pudo completarla. Ollama puede haber agotado " +
+                    "su tiempo de respuesta; comprueba que siga activo y vuelve a intentar cuando este disponible."
+            )
+            else -> "No pude completar la consulta con Celeste Core. Comprueba la conexion del telefono y que Core siga disponible."
+        }
     }
 
     private fun parseAssistantEvent(json: JSONObject): AssistantEvent {
