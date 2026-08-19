@@ -9,8 +9,9 @@ from app.services.tools import ToolExecution, ToolRouter
 
 # This selector is deliberately conservative. A false positive only costs prompt
 # tokens by keeping tools available; a false negative could prevent Celeste from
-# consulting durable memory. Cues should therefore describe Celeste capabilities
-# or personal context, not generic concepts such as computer "memoria RAM".
+# consulting durable memory, reminders or the user's calendar. Cues should
+# therefore describe Celeste capabilities or personal context, not generic
+# concepts such as computer "memoria RAM".
 _TOOL_CUES = (
     "brain",
     "nota",
@@ -18,6 +19,11 @@ _TOOL_CUES = (
     "titulo",
     "contenido",
     "recuerd",
+    "recordatorio",
+    "recordatorios",
+    "avisame",
+    "alerta",
+    "alertame",
     "acuerd",
     "pendiente",
     "pendientes",
@@ -51,6 +57,19 @@ _TOOL_CUES = (
     "bandeja",
     "borrador",
     "borradores",
+    "calendar",
+    "calendario",
+    "agenda",
+    "evento",
+    "eventos",
+    "cita",
+    "citas",
+    "reunion",
+    "reuniones",
+    "programa",
+    "programar",
+    "programado",
+    "programada",
     "te dije",
     "te habia dicho",
     "habia dicho",
@@ -71,16 +90,16 @@ _PERSONAL_MEMORY_PATTERNS = (
 _SEARCH_MEMORY_HONESTY_SUFFIX = (
     " Results are stored notes/tasks, not schedules. A title, type, tag, date or reminder "
     "wording does not prove that a future notification is scheduled. Do not call an item "
-    "scheduled or offer a real reminder unless a scheduling tool is available and returned "
-    "status=executed. When the user asks for prioritization or advice, reason only from facts "
-    "present in the retrieved results; do not invent technical or domain facts."
+    "scheduled unless a real reminder/calendar tool is available and returned status=executed. "
+    "When the user asks for prioritization or advice, reason only from facts present in the "
+    "retrieved results; do not invent technical or domain facts."
 )
 
 _SEARCH_MEMORY_RESULT_CONTEXT = (
     "All search results are stored notes/tasks only, not schedules. Never describe them as "
-    "scheduled/programmed reminders or claim a notification will occur. If prioritizing or "
-    "giving advice, use only facts present in the retrieved title/content/tags; do not invent "
-    "technical or domain facts."
+    "scheduled/programmed reminders unless a separate reminder/calendar tool actually executed. "
+    "If prioritizing or giving advice, use only facts present in the retrieved title/content/tags; "
+    "do not invent technical or domain facts."
 )
 
 
