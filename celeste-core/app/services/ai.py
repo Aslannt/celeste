@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -21,13 +22,17 @@ class AssistantResult:
     reply: str
     provider: str
     events: list[ToolExecution]
+    performance: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "reply": self.reply,
             "provider": self.provider,
             "events": [event.to_dict() for event in self.events],
         }
+        if self.performance is not None:
+            result["performance"] = self.performance
+        return result
 
 
 class AIProvider(Protocol):
@@ -176,6 +181,57 @@ def _unknown_risk():
     from app.services.tools import ToolRisk
 
     return ToolRisk.RESTRICTED
+
+
+def _duration_ns_to_ms(value: Any) -> float | None:
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        return None
+    return round(float(value) / 1_000_000, 2)
+
+
+def _ollama_round_performance(
+    payload: dict[str, Any],
+    round_number: int,
+    wall_ms: float,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "round": round_number,
+        "wall_ms": round(wall_ms, 2),
+    }
+    duration_fields = {
+        "total_duration": "server_total_ms",
+        "load_duration": "load_ms",
+        "prompt_eval_duration": "prompt_eval_ms",
+        "eval_duration": "generation_ms",
+    }
+    for source, target in duration_fields.items():
+        value = _duration_ns_to_ms(payload.get(source))
+        if value is not None:
+            result[target] = value
+
+    for source, target in (
+        ("prompt_eval_count", "prompt_tokens"),
+        ("eval_count", "generated_tokens"),
+    ):
+        value = payload.get(source)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            result[target] = value
+
+    eval_count = payload.get("eval_count")
+    eval_duration = payload.get("eval_duration")
+    if (
+        isinstance(eval_count, int)
+        and not isinstance(eval_count, bool)
+        and eval_count >= 0
+        and isinstance(eval_duration, (int, float))
+        and not isinstance(eval_duration, bool)
+        and eval_duration > 0
+    ):
+        result["generation_tokens_per_second"] = round(
+            eval_count / (float(eval_duration) / 1_000_000_000),
+            2,
+        )
+    return result
 
 
 class LocalRulesProvider:
@@ -393,6 +449,9 @@ class OllamaProvider:
         if not message.strip():
             raise AIProviderError("El mensaje no puede estar vacio.")
 
+        started = time.perf_counter()
+        rounds: list[dict[str, Any]] = []
+        tool_timings: list[dict[str, Any]] = []
         tools = self._tool_schemas(router.tool_schemas())
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": _CELESTE_INSTRUCTIONS},
@@ -400,8 +459,16 @@ class OllamaProvider:
         ]
         events: list[ToolExecution] = []
 
-        for _ in range(4):
+        for round_index in range(4):
+            round_started = time.perf_counter()
             response = self._chat(messages, tools)
+            rounds.append(
+                _ollama_round_performance(
+                    response,
+                    round_index + 1,
+                    (time.perf_counter() - round_started) * 1000,
+                )
+            )
             raw_message = response.get("message")
             if not isinstance(raw_message, dict):
                 raise AIProviderError("Ollama devolvio una respuesta sin message valido.")
@@ -413,9 +480,27 @@ class OllamaProvider:
             content = str(raw_message.get("content") or "").strip()
             if not raw_calls:
                 if not events:
+                    fallback_started = time.perf_counter()
                     fallback = _explicit_create_fallback(message, router, self.name)
                     if fallback is not None:
-                        return fallback
+                        tool_timings.append(
+                            {
+                                "tool": "create_note",
+                                "duration_ms": round(
+                                    (time.perf_counter() - fallback_started) * 1000,
+                                    2,
+                                ),
+                                "source": "deterministic_fallback",
+                            }
+                        )
+                        return self._result(
+                            fallback.reply,
+                            fallback.events,
+                            started,
+                            rounds,
+                            tool_timings,
+                        )
+                delete_started = time.perf_counter()
                 delete_fallback = _explicit_delete_after_search_fallback(
                     message,
                     events,
@@ -423,11 +508,29 @@ class OllamaProvider:
                     self.name,
                 )
                 if delete_fallback is not None:
-                    return delete_fallback
-                return AssistantResult(
-                    reply=content or "No obtuve una respuesta de texto del proveedor local.",
-                    provider=self.name,
-                    events=events,
+                    tool_timings.append(
+                        {
+                            "tool": "delete_note",
+                            "duration_ms": round(
+                                (time.perf_counter() - delete_started) * 1000,
+                                2,
+                            ),
+                            "source": "deterministic_fallback",
+                        }
+                    )
+                    return self._result(
+                        delete_fallback.reply,
+                        delete_fallback.events,
+                        started,
+                        rounds,
+                        tool_timings,
+                    )
+                return self._result(
+                    content or "No obtuve una respuesta de texto del proveedor local.",
+                    events,
+                    started,
+                    rounds,
+                    tool_timings,
                 )
 
             assistant_message: dict[str, Any] = {
@@ -439,7 +542,18 @@ class OllamaProvider:
             round_events: list[ToolExecution] = []
 
             for raw_call in raw_calls:
+                tool_started = time.perf_counter()
                 execution, tool_name = self._execute_tool_call(raw_call, router)
+                tool_timings.append(
+                    {
+                        "tool": tool_name,
+                        "duration_ms": round(
+                            (time.perf_counter() - tool_started) * 1000,
+                            2,
+                        ),
+                        "source": "model_tool_call",
+                    }
+                )
                 events.append(execution)
                 round_events.append(execution)
                 messages.append(
@@ -456,16 +570,40 @@ class OllamaProvider:
 
             pending = [event for event in round_events if event.status == "confirmation_required"]
             if pending:
-                return AssistantResult(
-                    reply=_confirmation_reply(pending),
-                    provider=self.name,
-                    events=events,
+                return self._result(
+                    _confirmation_reply(pending),
+                    events,
+                    started,
+                    rounds,
+                    tool_timings,
                 )
 
+        return self._result(
+            "Detuve la ejecucion porque se alcanzo el limite de rondas de herramientas.",
+            events,
+            started,
+            rounds,
+            tool_timings,
+        )
+
+    def _result(
+        self,
+        reply: str,
+        events: list[ToolExecution],
+        started: float,
+        rounds: list[dict[str, Any]],
+        tool_timings: list[dict[str, Any]],
+    ) -> AssistantResult:
         return AssistantResult(
-            reply="Detuve la ejecucion porque se alcanzo el limite de rondas de herramientas.",
+            reply=reply,
             provider=self.name,
             events=events,
+            performance={
+                "model": self.model,
+                "total_ms": round((time.perf_counter() - started) * 1000, 2),
+                "ollama_rounds": rounds,
+                "tools": tool_timings,
+            },
         )
 
     def _chat(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
