@@ -42,6 +42,7 @@ Answer in Spanish unless the user clearly uses another language.
 Use the provided tools whenever the user asks about Celeste Brain memories or PC status, or asks you to save or change durable memory.
 When the user clearly asks you to remember, save or note something and the content is clear, call create_note immediately. Generate a concise title yourself. Use type=note unless task, memory or project is clearly more appropriate, and infer a few useful tags or use none. Do not ask the user to choose title, type or tags just to create the note.
 Creating a note is SAFE_WRITE and does not require user confirmation. Only actions whose tool result says confirmation_required require confirmation.
+When the user's original request already explicitly asks to delete a note, do not ask for a second conversational confirmation after finding it. If search_memory identifies exactly one intended note, call delete_note for that note. The Tool Router will create the real confirmation_required action. If the match is ambiguous, ask the user to clarify instead of choosing a note yourself.
 Never claim that a tool action happened unless the tool result says status=executed.
 If a tool returns confirmation_required, clearly ask the user to confirm; never repeat the action or pretend it already ran.
 Never promise a future reminder, notification or scheduled action unless a tool explicitly scheduled that action and returned status=executed. Saving a note or task is not the same as scheduling a reminder.
@@ -58,6 +59,13 @@ _EXPLICIT_CREATE_PATTERNS = [
         r"^\s*crea\s+(?:una\s+)?nota(?:\s+que\s+diga|\s+sobre)?\s+(.+?)\s*$",
         re.IGNORECASE | re.DOTALL,
     ),
+]
+
+
+_EXPLICIT_DELETE_PATTERNS = [
+    re.compile(r"^\s*(?:elimina(?:la|lo)?|borra(?:la|lo)?)\b"),
+    re.compile(r"\by\s+(?:elimina(?:la|lo)?|borra(?:la|lo)?)\b"),
+    re.compile(r"\b(?:eliminar|borrar)\s+(?:la\s+|el\s+)?nota\b"),
 ]
 
 
@@ -104,6 +112,55 @@ def _explicit_create_fallback(
         reply = "No pude guardar la nota en Celeste Brain."
 
     return AssistantResult(reply=reply, provider=provider, events=[event])
+
+
+def _explicit_delete_requested(message: str) -> bool:
+    normalized = _plain(message)
+    return any(pattern.search(normalized) for pattern in _EXPLICIT_DELETE_PATTERNS)
+
+
+def _explicit_delete_after_search_fallback(
+    message: str,
+    events: list[ToolExecution],
+    router: ToolRouter,
+    provider: str,
+) -> AssistantResult | None:
+    if not _explicit_delete_requested(message):
+        return None
+    if any(event.tool == "delete_note" for event in events):
+        return None
+
+    search_events = [
+        event
+        for event in events
+        if event.tool == "search_memory"
+        and event.status == "executed"
+        and isinstance(event.output, list)
+    ]
+    if not search_events:
+        return None
+
+    matches = search_events[-1].output
+    if len(matches) != 1:
+        return None
+
+    note = matches[0]
+    if not isinstance(note, dict):
+        return None
+    note_id = str(note.get("id") or "").strip()
+    if not note_id:
+        return None
+
+    event = router.execute("delete_note", {"note_id": note_id})
+    combined_events = [*events, event]
+    if event.status == "confirmation_required":
+        reply = _confirmation_reply([event])
+    elif event.status == "executed":
+        reply = "La nota fue eliminada."
+    else:
+        reply = event.summary or "No pude preparar la eliminacion de la nota."
+
+    return AssistantResult(reply=reply, provider=provider, events=combined_events)
 
 
 def _confirmation_reply(events: list[ToolExecution]) -> str:
@@ -250,6 +307,14 @@ class OpenAIProvider:
                     fallback = _explicit_create_fallback(message, router, self.name)
                     if fallback is not None:
                         return fallback
+                delete_fallback = _explicit_delete_after_search_fallback(
+                    message,
+                    events,
+                    router,
+                    self.name,
+                )
+                if delete_fallback is not None:
+                    return delete_fallback
                 reply = (response.output_text or "").strip()
                 if not reply:
                     reply = "No obtuve una respuesta de texto del proveedor."
@@ -351,6 +416,14 @@ class OllamaProvider:
                     fallback = _explicit_create_fallback(message, router, self.name)
                     if fallback is not None:
                         return fallback
+                delete_fallback = _explicit_delete_after_search_fallback(
+                    message,
+                    events,
+                    router,
+                    self.name,
+                )
+                if delete_fallback is not None:
+                    return delete_fallback
                 return AssistantResult(
                     reply=content or "No obtuve una respuesta de texto del proveedor local.",
                     provider=self.name,
