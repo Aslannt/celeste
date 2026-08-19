@@ -9,6 +9,69 @@ from app.models import Note
 
 _INDEX_LOCK = threading.RLock()
 _TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+_SEARCH_STOPWORDS = frozenset(
+    {
+        "a",
+        "al",
+        "algo",
+        "ante",
+        "con",
+        "contra",
+        "de",
+        "del",
+        "desde",
+        "donde",
+        "el",
+        "ella",
+        "ellos",
+        "en",
+        "entre",
+        "era",
+        "es",
+        "esa",
+        "ese",
+        "eso",
+        "esta",
+        "este",
+        "esto",
+        "ha",
+        "habia",
+        "hasta",
+        "hay",
+        "la",
+        "las",
+        "lo",
+        "los",
+        "me",
+        "mi",
+        "mis",
+        "no",
+        "nos",
+        "o",
+        "para",
+        "pero",
+        "por",
+        "que",
+        "se",
+        "si",
+        "sin",
+        "sobre",
+        "su",
+        "sus",
+        "te",
+        "tenia",
+        "tengo",
+        "tu",
+        "tus",
+        "un",
+        "una",
+        "unas",
+        "uno",
+        "unos",
+        "y",
+        "ya",
+    }
+)
 
 
 class BrainIndexError(RuntimeError):
@@ -110,33 +173,55 @@ class BrainIndex:
                 connection.close()
 
     @staticmethod
-    def _fts_query(value: str) -> str | None:
-        tokens = _TOKEN_RE.findall(value.casefold())
+    def _search_tokens(value: str) -> list[str]:
+        tokens = list(dict.fromkeys(_TOKEN_RE.findall(value.casefold())))
+        if not tokens:
+            return []
+        significant = [token for token in tokens if token not in _SEARCH_STOPWORDS]
+        return significant or tokens
+
+    @classmethod
+    def _fts_query(cls, value: str, *, match_all: bool = True) -> str | None:
+        tokens = cls._search_tokens(value)
         if not tokens:
             return None
-        # Each token is quoted and combined with AND so user punctuation cannot
-        # accidentally become FTS5 query syntax.
-        return " AND ".join(f'"{token}"' for token in tokens)
+        # Tokens are always quoted, so punctuation or model-generated text cannot
+        # become raw FTS5 syntax. Prefer strict AND for precision; search_ids may
+        # retry with OR only when the strict natural-language query has no hits.
+        joiner = " AND " if match_all else " OR "
+        return joiner.join(f'"{token}"' for token in tokens)
+
+    @staticmethod
+    def _search_rows(
+        connection: sqlite3.Connection,
+        fts_query: str,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        return connection.execute(
+            """
+            SELECT note_id
+            FROM notes_fts
+            WHERE notes_fts MATCH ?
+            ORDER BY bm25(notes_fts), updated_at DESC
+            LIMIT ?
+            """,
+            (fts_query, limit),
+        ).fetchall()
 
     def search_ids(self, query: str, limit: int = 20) -> list[str]:
-        fts_query = self._fts_query(query)
-        if not fts_query:
+        strict_query = self._fts_query(query, match_all=True)
+        if not strict_query:
             return []
 
         with _INDEX_LOCK:
             self.initialize()
             connection = self._connect()
             try:
-                rows = connection.execute(
-                    """
-                    SELECT note_id
-                    FROM notes_fts
-                    WHERE notes_fts MATCH ?
-                    ORDER BY bm25(notes_fts), updated_at DESC
-                    LIMIT ?
-                    """,
-                    (fts_query, limit),
-                ).fetchall()
+                rows = self._search_rows(connection, strict_query, limit)
+                if not rows and " AND " in strict_query:
+                    relaxed_query = self._fts_query(query, match_all=False)
+                    if relaxed_query and relaxed_query != strict_query:
+                        rows = self._search_rows(connection, relaxed_query, limit)
                 return [str(row["note_id"]) for row in rows]
             except sqlite3.Error as exc:
                 raise BrainIndexError(f"No se pudo buscar en el indice: {exc}") from exc
