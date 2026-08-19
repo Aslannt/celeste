@@ -4,6 +4,7 @@ import httpx
 
 from app.config import Settings
 from app.services.ai import OllamaProvider, build_provider
+from app.services.llm_tool_scope import scope_router_for_message
 from app.services.tools import ToolRisk, ToolRouter, ToolSpec
 
 
@@ -109,6 +110,64 @@ def test_ollama_provider_calls_tools_and_returns_final_answer(tmp_path, monkeypa
         message.get("role") == "tool" and message.get("tool_name") == "get_pc_status"
         for message in calls[1]["json"]["messages"]
     )
+
+
+def test_ollama_search_memory_round_includes_grounding_context(tmp_path, monkeypatch):
+    settings = _configure(tmp_path, monkeypatch)
+    calls: list[dict] = []
+    router = ToolRouter(settings)
+    created = router.execute(
+        "create_note",
+        {
+            "title": "Recordatorio: revisar llantas el sabado",
+            "content": "El proximo sabado debo revisar la presion de las llantas.",
+            "type": "task",
+            "tags": ["recordatorio", "moto"],
+        },
+    )
+    assert created.status == "executed"
+
+    fake = FakeClient(
+        [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "search_memory",
+                                "arguments": {"query": "moto llantas", "limit": 5},
+                            }
+                        }
+                    ],
+                }
+            },
+            {"message": {"role": "assistant", "content": "Respuesta final"}},
+        ],
+        calls,
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **_: fake)
+
+    view = scope_router_for_message(router, "Revisa lo que recuerdas sobre la moto")
+    result = OllamaProvider(
+        settings.ollama_url,
+        settings.llm_model,
+        settings.llm_timeout_seconds,
+        settings.ollama_think,
+    ).answer("Revisa lo que recuerdas sobre la moto", view)
+
+    assert result.reply == "Respuesta final"
+    assert len(calls) == 2
+    tool_messages = [
+        message
+        for message in calls[1]["json"]["messages"]
+        if message.get("role") == "tool" and message.get("tool_name") == "search_memory"
+    ]
+    assert len(tool_messages) == 1
+    assert "_celeste_context" in tool_messages[0]["content"]
+    assert "not schedules" in tool_messages[0]["content"]
+    assert "do not invent technical or domain facts" in tool_messages[0]["content"]
 
 
 def test_ollama_provider_exposes_server_performance_metrics(tmp_path, monkeypatch):
