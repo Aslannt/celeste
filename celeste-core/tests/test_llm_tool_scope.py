@@ -78,7 +78,7 @@ def test_search_memory_schema_does_not_present_notes_as_schedules(tmp_path, monk
     assert "stored notes/tasks, not schedules" not in original_search["description"]
 
 
-def test_search_memory_execution_adds_provider_grounding_context(tmp_path, monkeypatch):
+def test_search_memory_execution_keeps_stored_results_as_plain_data(tmp_path, monkeypatch):
     router = _router(tmp_path, monkeypatch)
     created = router.execute(
         "create_note",
@@ -97,9 +97,7 @@ def test_search_memory_execution_adds_provider_grounding_context(tmp_path, monke
     assert event.status == "executed"
     assert isinstance(event.output, list)
     assert event.output
-    context = event.output[0]["_celeste_context"].lower()
-    assert "stored notes/tasks only, not schedules" in context
-    assert "do not invent technical or domain facts" in context
+    assert "_celeste_context" not in event.output[0]
 
 
 def test_schema_view_still_delegates_real_tool_execution(tmp_path, monkeypatch):
