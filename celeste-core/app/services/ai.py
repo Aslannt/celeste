@@ -58,6 +58,14 @@ Keep answers concise and useful.
 """
 
 
+_CELESTE_CONVERSATION_INSTRUCTIONS = """You are Celeste, a private personal assistant.
+Answer in Spanish unless the user clearly uses another language.
+Be concise, accurate and useful.
+No tools are available in this conversational mode. Never claim that you saved, changed, deleted, scheduled, remembered, or executed anything.
+Never promise a future reminder or notification.
+"""
+
+
 _EXPLICIT_CREATE_PATTERNS = [
     re.compile(r"^\s*(?:recuerda|guarda|anota)\s+que\s+(.+?)\s*$", re.IGNORECASE | re.DOTALL),
     re.compile(r"^\s*(?:acu[eé]rdate)\s+(?:de\s+)?que\s+(.+?)\s*$", re.IGNORECASE | re.DOTALL),
@@ -466,9 +474,15 @@ class OllamaProvider:
         started = time.perf_counter()
         rounds: list[dict[str, Any]] = []
         tool_timings: list[dict[str, Any]] = []
-        tools = self._tool_schemas(router.tool_schemas())
+        raw_tool_schemas = router.tool_schemas()
+        tools = self._tool_schemas(raw_tool_schemas)
+        instructions = (
+            _CELESTE_INSTRUCTIONS
+            if raw_tool_schemas
+            else _CELESTE_CONVERSATION_INSTRUCTIONS
+        )
         messages: list[dict[str, Any]] = [
-            {"role": "system", "content": _CELESTE_INSTRUCTIONS},
+            {"role": "system", "content": instructions},
             {"role": "user", "content": message},
         ]
         events: list[ToolExecution] = []
