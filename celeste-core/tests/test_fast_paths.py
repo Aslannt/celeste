@@ -186,3 +186,17 @@ def test_natural_recall_fast_path_does_not_capture_analysis_request(tmp_path, mo
     )
 
     assert result is None
+
+
+def test_natural_recall_pattern_requires_read_only_followup(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    result = try_ollama_fast_path(
+        "No te habia dicho que tenia algo de la moto? Dime cual deberia hacer primero.",
+        router,
+        settings,
+    )
+
+    assert result is None
