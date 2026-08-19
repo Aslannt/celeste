@@ -22,6 +22,30 @@ data class Note(
     val deleted: Boolean,
 )
 
+data class Reminder(
+    val id: String,
+    val title: String,
+    val message: String,
+    val dueAt: String,
+    val createdAt: String,
+    val firedAt: String?,
+    val doneAt: String?,
+    val cancelledAt: String?,
+)
+
+data class CalendarEvent(
+    val id: String,
+    val summary: String,
+    val description: String,
+    val location: String,
+    val status: String,
+    val start: String,
+    val end: String,
+    val timeZone: String,
+    val organizer: String,
+    val attendees: List<String>,
+)
+
 data class CelesteConfig(
     val coreBaseUrl: String = "",
     val apiToken: String = "celeste-local-dev",

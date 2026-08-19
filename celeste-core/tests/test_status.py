@@ -12,5 +12,5 @@ def test_status_is_online(tmp_path, monkeypatch):
     body = response.json()
     assert body["name"] == "Celeste"
     assert body["status"] == "online"
-    assert body["version"] == "0.4.1"
+    assert body["version"] == "0.4.2"
     assert body["brain_ready"] is True

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "celeste-core"
-version = "0.4.1"
+version = "0.4.2"
 description = "Local core service for the Celeste personal assistant"
 requires-python = ">=3.12"
 dependencies = [
