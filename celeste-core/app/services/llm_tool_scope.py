@@ -60,6 +60,13 @@ _PERSONAL_MEMORY_PATTERNS = (
     re.compile(r"\b(?:que|qué) (?:tienes|hay) (?:en )?(?:tu |mi )?memoria\b"),
 )
 
+_SEARCH_MEMORY_HONESTY_SUFFIX = (
+    " Results are stored notes/tasks, not schedules. A title, type, tag, date or reminder "
+    "wording does not prove that a future notification is scheduled. Do not call an item "
+    "scheduled or offer a real reminder unless a scheduling tool is available and returned "
+    "status=executed."
+)
+
 
 def _plain(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
@@ -89,7 +96,17 @@ class ToolSchemaView:
     def tool_schemas(self) -> list[dict[str, Any]]:
         if not self._expose_tools:
             return []
-        return self._router.tool_schemas()
+
+        schemas: list[dict[str, Any]] = []
+        for schema in self._router.tool_schemas():
+            decorated = dict(schema)
+            if decorated.get("name") == "search_memory":
+                decorated["description"] = (
+                    str(decorated.get("description") or "")
+                    + _SEARCH_MEMORY_HONESTY_SUFFIX
+                )
+            schemas.append(decorated)
+        return schemas
 
     def execute(self, name: str, arguments: dict[str, Any]):
         return self._router.execute(name, arguments)
