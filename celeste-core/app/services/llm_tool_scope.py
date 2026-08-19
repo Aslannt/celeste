@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.services.tools import ToolExecution, ToolRouter
 
@@ -70,6 +72,10 @@ _TOOL_CUES = (
     "programar",
     "programado",
     "programada",
+    "manana",
+    "hoy",
+    "esta tarde",
+    "esta noche",
     "te dije",
     "te habia dicho",
     "habia dicho",
@@ -103,11 +109,36 @@ _SEARCH_MEMORY_RESULT_CONTEXT = (
     "do not invent technical or domain facts."
 )
 
+_SCHEDULING_TOOLS = {
+    "create_reminder",
+    "list_reminders",
+    "calendar_list_events",
+    "calendar_get_event",
+    "calendar_create_event",
+    "calendar_update_event",
+    "calendar_delete_event",
+}
+
 
 def _plain(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
     text = "".join(char for char in decomposed if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", text.casefold()).strip()
+
+
+def _scheduling_context(router: ToolRouter) -> str:
+    time_zone = str(router.settings.calendar_time_zone or "UTC").strip() or "UTC"
+    try:
+        local_now = datetime.now(ZoneInfo(time_zone))
+    except ZoneInfoNotFoundError:
+        time_zone = "UTC"
+        local_now = datetime.now(ZoneInfo("UTC"))
+    return (
+        " Celeste scheduling clock: current local date/time is "
+        f"{local_now.isoformat(timespec='seconds')} in time zone {time_zone}. "
+        "Resolve relative expressions such as today/tomorrow from this clock and pass explicit "
+        "ISO-8601 values to scheduling tools. Do not invent another current date or time."
+    )
 
 
 def message_needs_tool_catalog(message: str) -> bool:
@@ -133,13 +164,20 @@ class ToolSchemaView:
         if not self._expose_tools:
             return []
 
+        scheduling_context = _scheduling_context(self._router)
         schemas: list[dict[str, Any]] = []
         for schema in self._router.tool_schemas():
             decorated = dict(schema)
-            if decorated.get("name") == "search_memory":
+            name = str(decorated.get("name") or "")
+            if name == "search_memory":
                 decorated["description"] = (
                     str(decorated.get("description") or "")
                     + _SEARCH_MEMORY_HONESTY_SUFFIX
+                )
+            if name in _SCHEDULING_TOOLS:
+                decorated["description"] = (
+                    str(decorated.get("description") or "")
+                    + scheduling_context
                 )
             schemas.append(decorated)
         return schemas
