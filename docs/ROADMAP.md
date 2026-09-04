@@ -126,8 +126,9 @@
 
 ## V0.5 - voz y moto
 
-- [ ] Speech-to-Text
-- [ ] Text-to-Speech
+- [x] Boton de microfono + Speech-to-Text nativo de Android en la pantalla de Asistente
+- [x] Text-to-Speech nativo para leer las respuestas, con interruptor para desactivarlo
+- [ ] Validar STT/TTS en telefono real (permiso de microfono, reconocedor disponible, voz en espanol)
 - [ ] Modo conduccion
 - [ ] Intercom Bluetooth
 - [ ] Activacion desde boton del intercom
