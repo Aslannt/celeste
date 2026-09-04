@@ -112,6 +112,9 @@ fun AssistantResponseCard(
     }
 }
 
+/** Plain-text version of an assistant reply, stripped of markdown/links, for text-to-speech. */
+fun assistantSpeechText(reply: String): String = prepareReply(reply).text
+
 private fun prepareReply(raw: String): DisplayReply {
     val links = linkedSetOf<String>()
     var text = markdownLinkRegex.replace(raw) { match ->

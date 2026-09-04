@@ -1,19 +1,30 @@
 package com.aslannt.celeste
 
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.aslannt.celeste.data.*
 import com.aslannt.celeste.data.local.PendingNoteEntity
 import com.aslannt.celeste.ui.AssistantResponseCard
@@ -21,6 +32,7 @@ import com.aslannt.celeste.ui.CelesteBackdrop
 import com.aslannt.celeste.ui.CelesteCard
 import com.aslannt.celeste.ui.CelesteHero
 import com.aslannt.celeste.ui.SectionHeading
+import com.aslannt.celeste.ui.assistantSpeechText
 import com.aslannt.celeste.ui.theme.CelesteTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -67,7 +79,20 @@ private fun CelesteScreen() {
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(config.coreBaseUrl.isBlank()) }
+    var listening by remember { mutableStateOf(false) }
+    var speakRepliesAloud by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
+
+    var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
+    DisposableEffect(Unit) {
+        val tts = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeech?.language = Locale("es", "CO")
+            }
+        }
+        textToSpeech = tts
+        onDispose { tts.shutdown() }
+    }
 
     fun runIo(block: suspend () -> Unit) {
         scope.launch {
@@ -99,6 +124,25 @@ private fun CelesteScreen() {
         } catch (_: Exception) { emptyList() }
     }
 
+    fun sendToAssistant(prompt: String) {
+        if (prompt.isBlank()) return
+        message = ""
+        runIo {
+            val api = CelesteApi(store.load())
+            val result = withContext(Dispatchers.IO) { api.askCeleste(prompt) }
+            assistantReply = result.reply
+            assistantProvider = result.provider
+            assistantEvents = result.events
+            assistantInput = ""
+            loadAssistantConfirmations(api)
+            loadDailyContext(api)
+            loadNotifications(api)
+            if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
+                try { notes = withContext(Dispatchers.IO) { api.listNotes() } } catch (_: Exception) { }
+            }
+        }
+    }
+
     fun refresh() = runIo {
         val current = store.load()
         val api = CelesteApi(current)
@@ -122,6 +166,60 @@ private fun CelesteScreen() {
             message = if (pendingNotes.isNotEmpty()) {
                 "Celeste Core no esta disponible. ${pendingNotes.size} nota(s) siguen guardadas en este telefono."
             } else "Celeste Core no esta disponible."
+        }
+    }
+
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        listening = false
+        val heard = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!heard.isNullOrBlank()) {
+            assistantInput = heard
+            sendToAssistant(heard)
+        }
+    }
+
+    fun launchSpeechRecognizer() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-CO")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Habla con Celeste...")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
+        }
+        try {
+            speechLauncher.launch(intent)
+            listening = true
+        } catch (_: ActivityNotFoundException) {
+            message = "No hay un servicio de reconocimiento de voz disponible en este telefono."
+        }
+    }
+
+    val microphonePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) launchSpeechRecognizer()
+        else message = "Celeste necesita permiso de microfono para escucharte."
+    }
+
+    fun requestVoiceInput() {
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasPermission) launchSpeechRecognizer()
+        else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    LaunchedEffect(assistantReply) {
+        if (assistantReply.isNotBlank() && speakRepliesAloud) {
+            val spoken = assistantSpeechText(assistantReply)
+            if (spoken.isNotBlank()) {
+                textToSpeech?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "celeste-reply")
+            }
         }
     }
 
@@ -246,40 +344,54 @@ private fun CelesteScreen() {
                             "Hablar con Celeste",
                             "Pregunta por agenda, Gmail o Brain; crea recordatorios y usa herramientas controladas.",
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Leer respuestas en voz alta",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Switch(checked = speakRepliesAloud, onCheckedChange = { speakRepliesAloud = it })
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             AssistChip(onClick = { assistantInput = "Recuérdame mañana a las 8 " }, label = { Text("Recordatorio") })
                             AssistChip(onClick = { assistantInput = "¿Qué tengo hoy en el calendario?" }, label = { Text("Agenda") })
                         }
-                        OutlinedTextField(
-                            value = assistantInput,
-                            onValueChange = { assistantInput = it },
-                            placeholder = { Text("¿Qué necesitas?") },
-                            minLines = 1,
-                            maxLines = 4,
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                        )
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = assistantInput,
+                                onValueChange = { assistantInput = it },
+                                placeholder = { Text(if (listening) "Escuchando..." else "¿Qué necesitas?") },
+                                minLines = 1,
+                                maxLines = 4,
+                                modifier = Modifier.weight(1f),
+                                shape = MaterialTheme.shapes.medium,
+                            )
+                            FilledIconButton(
+                                enabled = !busy,
+                                onClick = { requestVoiceInput() },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = if (listening) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.secondaryContainer
+                                    },
+                                ),
+                            ) {
+                                Text(if (listening) "●" else "🎙")
+                            }
+                        }
                         Button(
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !busy && assistantInput.isNotBlank(),
-                            onClick = {
-                                val prompt = assistantInput.trim()
-                                message = ""
-                                runIo {
-                                    val api = CelesteApi(store.load())
-                                    val result = withContext(Dispatchers.IO) { api.askCeleste(prompt) }
-                                    assistantReply = result.reply
-                                    assistantProvider = result.provider
-                                    assistantEvents = result.events
-                                    assistantInput = ""
-                                    loadAssistantConfirmations(api)
-                                    loadDailyContext(api)
-                                    loadNotifications(api)
-                                    if (result.events.any { it.tool == "create_note" && it.status == "executed" }) {
-                                        try { notes = withContext(Dispatchers.IO) { api.listNotes() } } catch (_: Exception) { }
-                                    }
-                                }
-                            },
+                            onClick = { sendToAssistant(assistantInput.trim()) },
                         ) { Text("Enviar a Celeste") }
 
                         if (assistantReply.isNotBlank()) {
