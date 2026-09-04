@@ -55,6 +55,7 @@ private fun CelesteScreen() {
     var assistantReply by remember { mutableStateOf("") }
     var assistantProvider by remember { mutableStateOf("") }
     var assistantEvents by remember { mutableStateOf<List<AssistantEvent>>(emptyList()) }
+    var showAssistantDetails by remember { mutableStateOf(false) }
     var pendingAssistantActions by remember { mutableStateOf<List<AssistantEvent>>(emptyList()) }
     var message by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -267,8 +268,8 @@ private fun CelesteScreen() {
                             value = assistantInput,
                             onValueChange = { assistantInput = it },
                             placeholder = { Text("¿Qué necesitas?") },
-                            minLines = 3,
-                            maxLines = 8,
+                            minLines = 1,
+                            maxLines = 5,
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
                         )
@@ -283,6 +284,7 @@ private fun CelesteScreen() {
                                     assistantReply = result.reply
                                     assistantProvider = result.provider
                                     assistantEvents = result.events
+                                    showAssistantDetails = false
                                     assistantInput = ""
                                     loadAssistantConfirmations(api)
                                     loadDailyContext(api)
@@ -301,27 +303,57 @@ private fun CelesteScreen() {
                                 Modifier.fillMaxWidth(),
                                 shape = MaterialTheme.shapes.medium,
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+                                contentColor = MaterialTheme.colorScheme.onSurface,
                             ) {
-                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(assistantReply, style = MaterialTheme.typography.bodyLarge)
-                                    if (assistantProvider.isNotBlank()) {
-                                        Text(
-                                            "Proveedor · $assistantProvider",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+                                Column(
+                                    Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text(
+                                        assistantReply.replace("**", ""),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+
+                                    if (assistantProvider.isNotBlank() || assistantEvents.isNotEmpty()) {
+                                        TextButton(
+                                            contentPadding = PaddingValues(
+                                                horizontal = 0.dp,
+                                                vertical = 0.dp,
+                                            ),
+                                            onClick = {
+                                                showAssistantDetails = !showAssistantDetails
+                                            },
+                                        ) {
+                                            Text(
+                                                if (showAssistantDetails) "Ocultar detalles"
+                                                else "Detalles"
+                                            )
+                                        }
                                     }
-                                    if (assistantEvents.isNotEmpty()) {
-                                        Text(
-                                            assistantEvents.joinToString("  ·  ") { "${it.tool} ${it.status}" },
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+
+                                    if (showAssistantDetails) {
+                                        if (assistantProvider.isNotBlank()) {
+                                            Text(
+                                                "Proveedor · $assistantProvider",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+
+                                        if (assistantEvents.isNotEmpty()) {
+                                            Text(
+                                                assistantEvents.joinToString("  ·  ") {
+                                                    "${it.tool} ${it.status}"
+                                                },
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-
                         if (pendingAssistantActions.isNotEmpty()) {
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Text("Requiere tu confirmacion", style = MaterialTheme.typography.titleMedium)
