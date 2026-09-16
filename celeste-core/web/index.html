@@ -73,8 +73,20 @@
 
   footer {
     flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-    padding: 22px; gap: 18px;
+    padding: 16px 18px 22px; gap: 12px; flex-wrap: wrap;
   }
+  #textForm { display: flex; gap: 8px; width: 100%; max-width: 520px; order: 1; }
+  #textInput {
+    flex: 1; padding: 11px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);
+    background: #0a1116; color: var(--text); font-size: 14px;
+  }
+  #textInput:focus { outline: none; border-color: rgba(79,214,255,0.5); }
+  #textSend {
+    padding: 0 18px; border-radius: 20px; border: none; background: var(--cyan-dim); color: var(--text);
+    font-size: 14px; cursor: pointer;
+  }
+  #textSend:hover { background: var(--cyan); color: #04222c; }
+  #micRow { order: 2; width: 100%; display: flex; justify-content: center; }
   #micButton {
     width: 78px; height: 78px; border-radius: 50%; border: none; cursor: pointer;
     background: radial-gradient(circle at 35% 30%, #1a2f38, #04141a);
@@ -132,7 +144,13 @@
   <div id="transcript"></div>
 
   <footer>
-    <button id="micButton" aria-label="Hablar">&#127908;</button>
+    <form id="textForm">
+      <input id="textInput" type="text" placeholder="Escríbele a Celeste..." autocomplete="off" />
+      <button type="submit" id="textSend">Enviar</button>
+    </form>
+    <div id="micRow">
+      <button id="micButton" aria-label="Hablar">&#127908;</button>
+    </div>
   </footer>
 </div>
 
@@ -159,6 +177,8 @@
     status: document.getElementById("statusText"),
     stateLabel: document.getElementById("stateLabel"),
     mic: document.getElementById("micButton"),
+    textForm: document.getElementById("textForm"),
+    textInput: document.getElementById("textInput"),
     transcript: document.getElementById("transcript"),
     settings: document.getElementById("settings"),
     settingsButton: document.getElementById("settingsButton"),
@@ -330,6 +350,16 @@
       sendToAssistant(heard);
     };
   }
+
+  els.textForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = els.textInput.value.trim();
+    if (!text) return;
+    if (!config.token) { openSettings(); return; }
+    addLine("user", "TÚ", text);
+    els.textInput.value = "";
+    sendToAssistant(text);
+  });
 
   function toggleListening() {
     if (!recognizer) {
