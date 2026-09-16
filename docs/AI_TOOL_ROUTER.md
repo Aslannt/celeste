@@ -79,6 +79,12 @@ Ejemplo de chat:
 
 La respuesta incluye texto, proveedor y eventos de herramientas. Esto permite que Android muestre que una respuesta uso `search_memory`, `create_note`, etc.
 
+## Memoria de conversacion
+
+`/assistant/chat` mantiene un historial corto en memoria (`app/services/conversation.py`, `ConversationHistory`) para que preguntas de seguimiento ("y eso como funciona?") tengan contexto. Es deliberadamente efimero: no se guarda en CelesteBrain, se resetea tras 30 min de inactividad o al reiniciar Core. Se antepone a los mensajes/input de Ollama y OpenAI antes del turno nuevo; `local_rules` lo ignora por ser determinista.
+
+Ver [ADR-009](DECISIONS.md): cualquier resumen que el usuario deba poder confiar como factual (recordatorios, agenda del dia) se construye leyendo la API directamente, nunca dejando que el modelo lo redacte libremente - se comprobo que fabrica datos plausibles pero falsos si se le pide un "resumen" abierto.
+
 ## Herramientas actuales (V0.4.2)
 
 Brain y PC:

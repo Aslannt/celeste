@@ -37,3 +37,11 @@ Decidido 2026-09-16. El usuario ya usa activamente un vault de Obsidian personal
 Alcance deliberadamente acotado: solo se migro el contenido que la propia app genera (notas, recordatorios, indice, notificaciones). No se fusiono con el resto del vault (contratos, reuniones, vida personal) ni se le dio a `search_memory` acceso a esas notas existentes - eso cambiaria que datos puede mencionar la IA en voz alta y es una decision de alcance/privacidad mayor que amerita evaluarse aparte, no decidirse de forma apurada.
 
 La copia original quedo renombrada como backup junto al repo (`CelesteBrain.pre-obsidian-backup-*`), no borrada, hasta confirmar que la migracion es estable.
+
+## ADR-009: resumenes de datos reales nunca se generan libremente con el LLM
+
+Descubierto 2026-09-16 implementando el resumen proactivo matutino (V0.5.1). La primera version pedia a `qwen3.5:9b` un "resumen breve de mi dia" en lenguaje libre, con `list_reminders`/`search_memory` disponibles como herramientas. El modelo no las llamo: broto una agenda entera inventada (una llamada a una persona que no existe, una clase de yoga, una cita al dentista) con el mismo tono seguro que si fuera real. Con las herramientas disponibles y el mensaje conteniendo cues claros ("recordatorios", "pendiente", "hoy"), el modelo igual opto por narrar en vez de consultar.
+
+Esto es la misma clase de riesgo que las honesty-suffixes de `search_memory` ya mitigan para resultados de busqueda (ver `llm_tool_scope.py`), pero mas grave: aqui no hubo ninguna llamada a herramienta que el usuario pudiera auditar via "Detalles" en la UI, solo texto plausible.
+
+Decision: cualquier resumen que el usuario vaya a confiar como "esto es lo que tengo de verdad" (recordatorios pendientes, agenda del dia, y a futuro inbox/calendario) se construye leyendo la API directamente en el cliente (o en un fast path deterministico en Core) y armando el texto en codigo, nunca dejando que el modelo redacte el contenido factual libremente. El LLM puede fungir para conversacion abierta (ver memoria de conversacion) pero no para narrar datos personales que deban ser exactos.

@@ -141,12 +141,16 @@
 - [x] Campo de texto como respaldo cuando el navegador no soporta reconocimiento de voz
 - [x] Manejo de confirmaciones CONFIRM (Confirmar/Cancelar) igual que Android
 - [x] Anuncios proactivos: revisa avisos sin ver cada 15s y los lee en voz alta sin que el usuario pregunte (validado con avisos reales, 2026-09-16)
-- [ ] Portar el mismo diseño visual (orbe animado) a la app Android
+- [x] Modo de conversacion continua: tras un turno iniciado por voz, vuelve a escuchar sola sin tocar el microfono; se desactiva al escribir, tocar el microfono o con una confirmacion pendiente
+- [x] Resumen proactivo al abrir por primera vez en el dia (recordatorios reales via API, deliberadamente sin pasar por el LLM tras detectar alucinacion de datos, 2026-09-16)
+- [x] Portar el mismo diseño visual (orbe animado) a la app Android (sin reactividad de amplitud real del microfono todavia, ese sigue siendo el dialogo del sistema)
 
 ## V0.6 - asistente personal diario
 
 - [ ] Vista diaria combinando agenda, recordatorios, inbox y Brain
-- [ ] Rutinas de manana/noche configurables
+- [x] Memoria de conversacion de corto plazo entre turnos (ConversationHistory, efimera, reset a los 30 min de inactividad o al reiniciar Core) - primer paso real hacia "hablar como con un amigo"
+- [x] Conciencia real del PC: CPU/RAM/disco reales via psutil en `get_pc_status`, no solo "esta online"
+- [ ] Rutinas de manana/noche configurables (el resumen matutino de V0.5.1 es el primer paso; falta version de noche y hacerlo configurable)
 - [ ] Notificaciones Android fiables en background (recordatorios ya disparan alarma real del sistema vía `ReminderAlarms`/`AlarmManager`, 2026-09-16; falta persistir tras reinicio del telefono y cubrir Gmail/Calendar del mismo modo; falta validar en telefono real)
 - [ ] Persistencia de confirmaciones importantes ante reinicios donde sea seguro
 - [ ] Backup/restauracion de Brain y datos locales
