@@ -29,3 +29,11 @@ Un LLM nunca recibira shell/sudo/administrador irrestricto. Toda accion del sist
 `docs/LINKEDIN_INTEGRATION_ASSESSMENT.md` (2026-08-18) ya habia concluido que la Messages API oficial de LinkedIn esta restringida a partners aprobados y que el self-serve abierto (`profile`, `email`, `w_member_social`) no cubre inbox/mensajes personales. Reverificado en 2026-09-15: sigue igual. Ademas, los intermediarios de terceros que si dan acceso (Unipile y similares) son servicios de pago, no la API oficial: violan la regla de "costo 0" de Celeste ademas de la ya documentada de no automatizacion fragil/no oficial.
 
 Decision: no implementar el conector de LinkedIn Messaging mientras no exista una via oficial, gratuita y accesible para un individuo. El item queda en el roadmap como bloqueado, no descartado (ver disparador de reevaluacion en `LINKEDIN_INTEGRATION_ASSESSMENT.md`).
+
+## ADR-008: CelesteBrain vive dentro del vault de Obsidian del usuario
+
+Decidido 2026-09-16. El usuario ya usa activamente un vault de Obsidian personal (`Documents/Vault Personal`, con notas de casa, trabajo y una bitacora manual propia sobre este mismo proyecto en `Celeste/`). Para que las notas y recordatorios que Celeste genera sean visibles/enlazables desde la misma herramienta que ya usa a diario, `CELESTE_BRAIN_DIR` se movio a `Vault Personal/CelesteBrain/` (config local en `.env`, no en codigo).
+
+Alcance deliberadamente acotado: solo se migro el contenido que la propia app genera (notas, recordatorios, indice, notificaciones). No se fusiono con el resto del vault (contratos, reuniones, vida personal) ni se le dio a `search_memory` acceso a esas notas existentes - eso cambiaria que datos puede mencionar la IA en voz alta y es una decision de alcance/privacidad mayor que amerita evaluarse aparte, no decidirse de forma apurada.
+
+La copia original quedo renombrada como backup junto al repo (`CelesteBrain.pre-obsidian-backup-*`), no borrada, hasta confirmar que la migracion es estable.

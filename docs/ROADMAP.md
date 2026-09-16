@@ -133,6 +133,16 @@
 - [ ] Intercom Bluetooth
 - [ ] Activacion desde boton del intercom
 
+## V0.5.1 - cliente web multiplataforma (interfaz "Jarvis")
+
+- [x] Pagina web servida por el propio Celeste Core en `/ui` (celeste-core/web/index.html), usable desde cualquier navegador de la LAN sin instalar nada
+- [x] Circulo animado en canvas reaccionando al nivel real del microfono (Web Audio) y a un pulso sintetico al pensar/hablar
+- [x] STT via Web Speech API y TTS via speechSynthesis del navegador, ambos gratis (solo Chrome/Edge soportan STT)
+- [x] Campo de texto como respaldo cuando el navegador no soporta reconocimiento de voz
+- [x] Manejo de confirmaciones CONFIRM (Confirmar/Cancelar) igual que Android
+- [x] Anuncios proactivos: revisa avisos sin ver cada 15s y los lee en voz alta sin que el usuario pregunte (validado con avisos reales, 2026-09-16)
+- [ ] Portar el mismo diseño visual (orbe animado) a la app Android
+
 ## V0.6 - asistente personal diario
 
 - [ ] Vista diaria combinando agenda, recordatorios, inbox y Brain
