@@ -25,3 +25,6 @@ celeste-core/CelesteBrain/
 # OS
 .DS_Store
 Thumbs.db
+
+**/calendar-credentials.json
+**/calendar-token.json
