@@ -95,6 +95,10 @@ a una fecha ISO-8601 explicita sin que el modelo tenga que adivinar el dia actua
 
 El navegador abre el consentimiento de Google. Celeste nunca solicita ni almacena la contrasena de Google.
 
+## Configuracion OAuth persistente para uso diario
+
+Igual que con Gmail (ver `GMAIL_SETUP.md`): si el proyecto de Google Cloud sigue en estado **Testing**, el token de Calendar tambien expira a los 7 dias. Cambiar el estado de publicacion a **In production** en el mismo proyecto resuelve ambos casos a la vez (Gmail y Calendar), sin costo. Repetir `connect_calendar_windows.ps1` una vez despues del cambio.
+
 ## Validacion antes de merge
 
 - CI Core + Android verde.

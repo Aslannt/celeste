@@ -63,6 +63,19 @@ celeste-core/.secrets/gmail-token.json
 
 If the requested OAuth scopes change later, delete the local Gmail token and run the authorization helper again so Google can grant the updated scopes.
 
+## Configuracion OAuth persistente para uso diario
+
+Si el consentimiento OAuth de Google Cloud sigue en estado **Testing**, el refresh token expira a los 7 dias sin importar el scope, y habria que reautorizar Gmail (y Calendar, si comparte el mismo proyecto) cada semana. Esto es costo 0 en dinero, pero rompe el uso diario.
+
+Para que el token no expire:
+
+1. En Google Cloud Console, ir a **APIs & Services > OAuth consent screen / Audience**.
+2. Cambiar el estado de publicacion de **Testing** a **In production**.
+3. Google seguira mostrando la pantalla de "app no verificada" al autorizar (los scopes `gmail.readonly` y `gmail.compose` son "sensitive", no "restricted"), pero para un solo usuario personal esto no requiere pasar la revision/verificacion formal de Google. Se acepta esa advertencia una vez y se continua.
+4. Repetir la autorizacion (`connect_gmail_windows.ps1`) una unica vez despues del cambio para emitir un token bajo el nuevo estado.
+
+Esto no tiene costo ni requiere una app publicada de verdad: "In production" es solo un estado dentro de Cloud Console, no una publicacion en un marketplace. Si en algun momento Google exige verificacion formal (por ejemplo si se agregan scopes restringidos), la verificacion tambien es gratuita, solo mas lenta.
+
 ## Scopes
 
 V0.4.1 requests only:

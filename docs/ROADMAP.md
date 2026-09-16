@@ -83,7 +83,7 @@
 - [x] Monitor manual de no leidos -> notificaciones locales
 - [x] Deduplicacion del monitor
 - [x] Crear borrador de respuesta real en el hilo correcto
-- [ ] Resolver configuracion OAuth persistente para uso diario
+- [ ] Resolver configuracion OAuth persistente para uso diario (pasos documentados en `GMAIL_SETUP.md`/`CALENDAR_REMINDERS.md`: pasar el consentimiento OAuth de Testing a In production en Google Cloud Console; falta que el usuario lo aplique)
 - [ ] Activar monitor periodico solo despues de la decision OAuth
 - [ ] Integrar mejor resumen/priorizacion de inbox en la experiencia diaria
 
@@ -118,7 +118,7 @@
 - [x] Crear sistema visual propio Celeste light/dark
 - [x] Redisenar home, asistente, inbox, Brain y estado offline
 - [ ] Validar visualmente el APK en telefono real
-- [ ] Integrar calendario y recordatorios sobre el nuevo lenguaje visual
+- [x] Integrar calendario y recordatorios sobre el nuevo lenguaje visual
 - [x] Evaluar acceso oficial disponible para LinkedIn Messaging (ver [ADR-007](DECISIONS.md): sin via oficial gratuita para individuos en 2026, item bloqueado)
 - [x] No depender de scraping ni automatizacion fragil del navegador para mensajeria (cumplido por decision de no implementar mientras no haya acceso oficial)
 - [ ] Si LinkedIn abre acceso oficial gratuito: leer mensajes y preparar borradores
