@@ -32,6 +32,24 @@ class GmailNotConnectedError(GmailError):
     pass
 
 
+def _refresh_failure_message(exc: Exception) -> str:
+    """Turn a raw refresh failure into an actionable message instead of a generic one.
+
+    `invalid_grant` almost always means the OAuth consent screen is still in Google
+    Cloud's "Testing" status (refresh tokens expire after 7 days there), the refresh
+    token went unused for 6+ months, or the Google account password changed. All
+    three require re-authorizing; none of them are a Celeste bug.
+    """
+    if "invalid_grant" in str(exc):
+        return (
+            "Gmail OAuth authorization expired or was revoked (invalid_grant). "
+            "Run connect_gmail_windows.ps1 to reauthorize. If this keeps happening "
+            "every ~7 days, the Google Cloud OAuth consent screen is likely still in "
+            "Testing status; publish it to Production (see docs/GMAIL_SETUP.md)."
+        )
+    return "Could not refresh the Gmail OAuth token"
+
+
 class _HTMLTextExtractor(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -470,7 +488,7 @@ class GmailClient:
             try:
                 credentials.refresh(Request())
             except Exception as exc:
-                raise GmailNotConnectedError("Could not refresh the Gmail OAuth token") from exc
+                raise GmailNotConnectedError(_refresh_failure_message(exc)) from exc
             self._save_credentials(credentials)
 
         if not credentials.valid:

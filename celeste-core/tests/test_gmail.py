@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import app
-from app.services.gmail import GmailClient
+from app.services.gmail import GmailClient, _refresh_failure_message
 from app.services.tools import ToolRouter
 
 TOKEN = "gmail-test-token"
@@ -159,6 +159,19 @@ def _message(
             "body": {"data": _b64(body)},
         },
     }
+
+
+def test_refresh_failure_message_flags_invalid_grant_actionably():
+    exc = Exception("('invalid_grant: Bad Request', {'error': 'invalid_grant'})")
+    message = _refresh_failure_message(exc)
+    assert "invalid_grant" in message
+    assert "connect_gmail_windows.ps1" in message
+    assert "Testing" in message
+
+
+def test_refresh_failure_message_falls_back_for_other_errors():
+    message = _refresh_failure_message(Exception("network unreachable"))
+    assert message == "Could not refresh the Gmail OAuth token"
 
 
 def test_gmail_tools_are_disabled_by_default(tmp_path, monkeypatch):

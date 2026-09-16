@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings
-from app.services.calendar import CalendarClient
+from app.services.calendar import CalendarClient, _refresh_failure_message
 from app.services.tools import ToolRouter
 
 
@@ -96,6 +96,19 @@ class FakeService:
 
     def events(self):
         return self.events_api
+
+
+def test_refresh_failure_message_flags_invalid_grant_actionably():
+    exc = Exception("('invalid_grant: Bad Request', {'error': 'invalid_grant'})")
+    message = _refresh_failure_message(exc)
+    assert "invalid_grant" in message
+    assert "connect_calendar_windows.ps1" in message
+    assert "Testing" in message
+
+
+def test_refresh_failure_message_falls_back_for_other_errors():
+    message = _refresh_failure_message(Exception("network unreachable"))
+    assert message == "Could not refresh the Calendar OAuth token"
 
 
 def test_calendar_tools_are_disabled_by_default(tmp_path, monkeypatch):
