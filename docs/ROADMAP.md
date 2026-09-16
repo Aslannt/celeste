@@ -119,9 +119,9 @@
 - [x] Redisenar home, asistente, inbox, Brain y estado offline
 - [ ] Validar visualmente el APK en telefono real
 - [ ] Integrar calendario y recordatorios sobre el nuevo lenguaje visual
-- [ ] Evaluar acceso oficial disponible para LinkedIn Messaging
-- [ ] No depender de scraping ni automatizacion fragil del navegador para mensajeria
-- [ ] Si existe acceso oficial adecuado: leer mensajes y preparar borradores
+- [x] Evaluar acceso oficial disponible para LinkedIn Messaging (ver [ADR-007](DECISIONS.md): sin via oficial gratuita para individuos en 2026, item bloqueado)
+- [x] No depender de scraping ni automatizacion fragil del navegador para mensajeria (cumplido por decision de no implementar mientras no haya acceso oficial)
+- [ ] Si LinkedIn abre acceso oficial gratuito: leer mensajes y preparar borradores
 - [ ] Envio de mensajes siempre con confirmacion inicialmente
 
 ## V0.5 - voz y moto

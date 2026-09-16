@@ -23,3 +23,9 @@ Un LLM nunca recibira shell/sudo/administrador irrestricto. Toda accion del sist
 ## ADR-006: modelo Ollama chico por defecto mientras el Core corre por CPU
 
 `CELESTE_LLM_MODEL` local se bajo de `qwen3.5:9b` a `qwen3.5:4b` (2026-09-04). El PC actual no tiene GPU compatible para acelerar Ollama (Core corre 100% CPU), y para el caso de uso de voz (V0.5) la latencia importa mas que la calidad marginal de un modelo mas grande: una respuesta lenta rompe la sensacion de "asistente" cuando se habla en vivo. Este es un ajuste de config local en `.env` (no versionado), no un cambio de codigo. Revisar de nuevo cuando el PC tenga GPU NVIDIA (Ollama acelera bien con CUDA); ahi probablemente conviene volver a `qwen3.5:9b` o subir a un modelo mayor.
+
+## ADR-007: LinkedIn Messaging queda en espera, sin acceso oficial gratuito
+
+Investigado en 2026-09-15. La Messages API oficial de LinkedIn (`POST /v2/messages`) esta restringida a partners aprobados via contrato/partnership, no tiene alta self-serve para desarrolladores individuales, y aunque se aprobara solo permite mensajes a conexiones de primer grado o respuestas en hilos existentes. Los intermediarios de terceros (Unipile y similares) si ofrecen acceso, pero son servicios de pago y no son la API oficial de LinkedIn: violan tanto la regla de "costo 0" de Celeste como la decision ya tomada en el roadmap de no depender de automatizacion fragil/no oficial para mensajeria.
+
+Decision: no implementar el conector de LinkedIn Messaging mientras no exista una via oficial, gratuita y accesible para un individuo. El item queda en el roadmap como bloqueado, no descartado; revisar si LinkedIn abre alguna vez un tier self-serve para Messages API.
