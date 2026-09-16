@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -22,7 +23,7 @@ from app.services.reminders import ReminderStore
 from app.services.storage import MarkdownNoteStorage, NoteNotFoundError
 
 
-def _pc_telemetry(brain_dir: Any) -> dict[str, Any]:
+def _pc_telemetry(brain_dir: Path) -> dict[str, Any]:
     """Real CPU/RAM/disk snapshot for get_pc_status, best-effort.
 
     Telemetry is informational only; a read failure here must never break the

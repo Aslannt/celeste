@@ -1,3 +1,5 @@
+import time
+
 from app.services.conversation import ConversationHistory
 
 
@@ -32,8 +34,6 @@ def test_idle_gap_resets_history():
     history = ConversationHistory(idle_seconds=0.05)
     history.append_exchange("Primero", "Respuesta uno")
     assert history.recent()
-
-    import time
 
     time.sleep(0.1)
 
