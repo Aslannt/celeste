@@ -24,6 +24,13 @@ class ReminderCreateRequest(BaseModel):
     time_zone: str | None = Field(default=None, max_length=100)
 
 
+class ReminderUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    due_at: str | None = Field(default=None, min_length=1, max_length=100)
+    message: str | None = Field(default=None, max_length=4000)
+    time_zone: str | None = Field(default=None, max_length=100)
+
+
 def _store() -> ReminderStore:
     return ReminderStore(Settings.from_env().brain_dir)
 
@@ -56,6 +63,24 @@ def create_reminder(request: ReminderCreateRequest) -> dict[str, Any]:
         )
     except ReminderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/{reminder_id}")
+def update_reminder(reminder_id: str, request: ReminderUpdateRequest) -> dict[str, Any]:
+    settings = Settings.from_env()
+    try:
+        reminder = ReminderStore(settings.brain_dir).update(
+            reminder_id,
+            title=request.title,
+            due_at=request.due_at,
+            message=request.message,
+            time_zone=request.time_zone or settings.calendar_time_zone,
+        )
+    except ReminderError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if reminder is None:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    return reminder
 
 
 @router.post("/poll")

@@ -84,6 +84,52 @@ def test_reminder_monitor_creates_notification_once(tmp_path, monkeypatch):
     assert notices[0]["metadata"]["reminder_id"] == reminder["id"]
 
 
+def test_reminder_store_update_changes_title_due_at_and_message(tmp_path):
+    store = ReminderStore(tmp_path / "brain")
+    created = store.create(title="Sacar el pollo", due_at=_future(minutes=120))
+
+    updated = store.update(
+        created["id"],
+        title="Sacar el pollo del horno",
+        due_at=_future(minutes=2),
+        message="Ya casi",
+    )
+
+    assert updated["title"] == "Sacar el pollo del horno"
+    assert updated["message"] == "Ya casi"
+    reloaded = ReminderStore(tmp_path / "brain").get(created["id"])
+    assert reloaded["due_at"] == updated["due_at"]
+    assert reloaded["due_at"] != created["due_at"]
+
+
+def test_reminder_store_update_rejects_past_due_at(tmp_path):
+    store = ReminderStore(tmp_path / "brain")
+    created = store.create(title="Prueba", due_at=_future())
+    try:
+        store.update(created["id"], due_at=_past())
+    except ReminderError as exc:
+        assert "future" in str(exc)
+    else:
+        raise AssertionError("past due_at should fail")
+
+
+def test_reminder_store_update_rejects_cancelled_reminder(tmp_path):
+    store = ReminderStore(tmp_path / "brain")
+    created = store.create(title="Prueba", due_at=_future())
+    store.cancel(created["id"])
+    try:
+        store.update(created["id"], title="Otro titulo")
+    except ReminderError as exc:
+        assert "cancel" in str(exc).lower()
+    else:
+        raise AssertionError("updating a cancelled reminder should fail")
+
+
+def test_reminder_store_update_missing_id_returns_none(tmp_path):
+    store = ReminderStore(tmp_path / "brain")
+    assert store.update("does-not-exist", title="x") is None
+
+
 def test_reminder_tools_have_expected_risk_levels(tmp_path, monkeypatch):
     settings = _configure(tmp_path, monkeypatch)
     router = ToolRouter(settings)
@@ -91,8 +137,28 @@ def test_reminder_tools_have_expected_risk_levels(tmp_path, monkeypatch):
 
     assert tools["list_reminders"] == "READ"
     assert tools["create_reminder"] == "SAFE_WRITE"
+    assert tools["update_reminder"] == "SAFE_WRITE"
     assert tools["complete_reminder"] == "SAFE_WRITE"
     assert tools["cancel_reminder"] == "CONFIRM"
+
+
+def test_update_reminder_tool_executes_immediately(tmp_path, monkeypatch):
+    settings = _configure(tmp_path, monkeypatch)
+    router = ToolRouter(settings)
+    created = router.execute(
+        "create_reminder",
+        {"title": "Sacar el pollo", "due_at": _future(minutes=120)},
+    )
+    reminder_id = created.output["id"]
+
+    result = router.execute(
+        "update_reminder",
+        {"reminder_id": reminder_id, "due_at": _future(minutes=2)},
+    )
+
+    assert result.status == "executed"
+    assert result.output["due_at"] != created.output["due_at"]
+    assert router.reminders.get(reminder_id)["due_at"] == result.output["due_at"]
 
 
 def test_cancel_reminder_waits_for_confirmation(tmp_path, monkeypatch):

@@ -24,6 +24,7 @@ Herramientas:
 
 - `list_reminders` -> READ
 - `create_reminder` -> SAFE_WRITE
+- `update_reminder` -> SAFE_WRITE (corrige titulo/hora/mensaje; no admite recordatorios ya completados o cancelados, y una hora nueva reactiva `fired_at`)
 - `complete_reminder` -> SAFE_WRITE
 - `cancel_reminder` -> CONFIRM
 

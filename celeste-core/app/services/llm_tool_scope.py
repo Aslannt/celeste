@@ -118,6 +118,7 @@ _CREATE_NOTE_SCHEDULING_SUFFIX = (
 
 _SCHEDULING_TOOLS = {
     "create_reminder",
+    "update_reminder",
     "list_reminders",
     "calendar_list_events",
     "calendar_get_event",

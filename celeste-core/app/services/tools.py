@@ -348,6 +348,34 @@ class ToolRouter:
         )
         self.register(
             ToolSpec(
+                name="update_reminder",
+                description=(
+                    "Update an existing Celeste reminder's title, due date/time, and/or message. "
+                    "Use this to correct or reschedule a reminder the user already created (for "
+                    "example if they said the wrong delay), instead of creating a duplicate "
+                    "reminder. due_at must be ISO-8601 if provided; if no offset is supplied, "
+                    "Celeste's configured local time zone is used."
+                ),
+                risk=ToolRisk.SAFE_WRITE,
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "reminder_id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "due_at": {
+                            "type": "string",
+                            "description": "Future ISO-8601 date/time, for example 2026-08-20T08:00:00-05:00.",
+                        },
+                        "message": {"type": "string"},
+                    },
+                    "required": ["reminder_id"],
+                    "additionalProperties": False,
+                },
+                handler=self._update_reminder,
+            )
+        )
+        self.register(
+            ToolSpec(
                 name="cancel_reminder",
                 description=(
                     "Cancel a future Celeste reminder. Because this can suppress an expected alert, "
@@ -842,6 +870,21 @@ class ToolRouter:
             message=str(arguments["message"]) if "message" in arguments else None,
             time_zone=self.settings.calendar_time_zone,
         )
+
+    def _update_reminder(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        reminder_id = str(arguments.get("reminder_id", "")).strip()
+        if not reminder_id:
+            raise ValueError("reminder_id is required")
+        reminder = self.reminders.update(
+            reminder_id,
+            title=arguments.get("title"),
+            due_at=arguments.get("due_at"),
+            message=arguments.get("message"),
+            time_zone=self.settings.calendar_time_zone,
+        )
+        if reminder is None:
+            raise ValueError("Reminder not found")
+        return reminder
 
     def _complete_reminder(self, arguments: dict[str, Any]) -> dict[str, Any]:
         reminder_id = str(arguments.get("reminder_id", "")).strip()

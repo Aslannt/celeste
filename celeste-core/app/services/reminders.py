@@ -85,6 +85,45 @@ class ReminderStore:
         filtered.sort(key=lambda item: str(item.get("due_at", "")))
         return [dict(item) for item in filtered[:limit]]
 
+    def update(
+        self,
+        reminder_id: str,
+        *,
+        title: str | None = None,
+        due_at: str | None = None,
+        message: str | None = None,
+        time_zone: str = "America/Bogota",
+    ) -> dict[str, Any] | None:
+        reminder_id = reminder_id.strip()
+        if not reminder_id:
+            raise ReminderError("reminder_id is required")
+        with self._lock:
+            items = self._read()
+            for item in items:
+                if item.get("id") != reminder_id:
+                    continue
+                if item.get("done_at") or item.get("cancelled_at"):
+                    raise ReminderError("Cannot update a completed or cancelled reminder")
+                if title is not None:
+                    clean_title = title.strip()
+                    if not clean_title:
+                        raise ReminderError("title cannot be empty")
+                    item["title"] = clean_title
+                if due_at is not None:
+                    due = _parse_due_at(due_at, time_zone)
+                    now = datetime.now(UTC)
+                    if due <= now:
+                        raise ReminderError("due_at must be in the future")
+                    item["due_at"] = due.isoformat().replace("+00:00", "Z")
+                    # A corrected due date re-arms the reminder even if the old
+                    # (wrong) one had already fired.
+                    item["fired_at"] = None
+                if message is not None:
+                    item["message"] = message.strip()
+                self._write(items)
+                return dict(item)
+        return None
+
     def get(self, reminder_id: str) -> dict[str, Any] | None:
         reminder_id = reminder_id.strip()
         with self._lock:

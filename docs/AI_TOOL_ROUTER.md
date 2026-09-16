@@ -93,6 +93,7 @@ Recordatorios locales:
 
 - `list_reminders` - READ
 - `create_reminder` - SAFE_WRITE
+- `update_reminder` - SAFE_WRITE
 - `complete_reminder` - SAFE_WRITE
 - `cancel_reminder` - CONFIRM
 
