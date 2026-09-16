@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -31,6 +32,8 @@ import com.aslannt.celeste.ui.AssistantResponseCard
 import com.aslannt.celeste.ui.CelesteBackdrop
 import com.aslannt.celeste.ui.CelesteCard
 import com.aslannt.celeste.ui.CelesteHero
+import com.aslannt.celeste.ui.CelesteOrb
+import com.aslannt.celeste.ui.OrbState
 import com.aslannt.celeste.ui.SectionHeading
 import com.aslannt.celeste.ui.assistantSpeechText
 import com.aslannt.celeste.ui.theme.CelesteTheme
@@ -84,14 +87,28 @@ private fun CelesteScreen() {
     val scope = rememberCoroutineScope()
 
     var textToSpeech by remember { mutableStateOf<TextToSpeech?>(null) }
+    var speaking by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
         val tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 textToSpeech?.language = Locale("es", "CO")
             }
         }
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) { speaking = true }
+            override fun onDone(utteranceId: String?) { speaking = false }
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) { speaking = false }
+        })
         textToSpeech = tts
         onDispose { tts.shutdown() }
+    }
+
+    val orbState = when {
+        listening -> OrbState.LISTENING
+        speaking -> OrbState.SPEAKING
+        busy -> OrbState.THINKING
+        else -> OrbState.IDLE
     }
 
     fun runIo(block: suspend () -> Unit) {
@@ -359,6 +376,9 @@ private fun CelesteScreen() {
                             "Hablar con Celeste",
                             "Pregunta por agenda, Gmail o Brain; crea recordatorios y usa herramientas controladas.",
                         )
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CelesteOrb(state = orbState)
+                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
