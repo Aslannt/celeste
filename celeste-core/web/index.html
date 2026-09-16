@@ -357,8 +357,15 @@
       startMicVisualizer();
     };
     recognizer.onerror = (e) => {
-      setState("idle", "Toca el micrófono");
       stopMicVisualizer();
+      setState("idle", "Toca el micrófono");
+      // In continuous conversation mode, silence timing out ("no-speech") is a
+      // normal pause, not a failure - retry quietly instead of surfacing an
+      // error and silently breaking the loop.
+      if (voiceConversationMode && (e.error === "no-speech" || e.error === "aborted")) {
+        maybeContinueConversation();
+        return;
+      }
       addLine("celeste", "CELESTE", "No te escuché bien (" + e.error + "). Intenta de nuevo.");
     };
     recognizer.onend = () => {
@@ -488,6 +495,7 @@
       stopSyntheticPulse();
       setState("idle", "Toca el micrófono");
       addLine("celeste", "CELESTE", "Error hablando con Core: " + err.message);
+      maybeContinueConversation();
     }
   }
 
