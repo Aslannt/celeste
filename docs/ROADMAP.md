@@ -137,7 +137,7 @@
 
 - [ ] Vista diaria combinando agenda, recordatorios, inbox y Brain
 - [ ] Rutinas de manana/noche configurables
-- [ ] Notificaciones Android fiables en background
+- [ ] Notificaciones Android fiables en background (recordatorios ya disparan alarma real del sistema vía `ReminderAlarms`/`AlarmManager`, 2026-09-16; falta persistir tras reinicio del telefono y cubrir Gmail/Calendar del mismo modo; falta validar en telefono real)
 - [ ] Persistencia de confirmaciones importantes ante reinicios donde sea seguro
 - [ ] Backup/restauracion de Brain y datos locales
 - [ ] Pruebas de ejecucion prolongada y recuperacion ante fallos
