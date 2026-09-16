@@ -489,11 +489,62 @@
     }
   }
 
+  // ---------- Proactive announcements ----------
+  // Celeste doesn't wait to be asked: while this page is open, it checks for
+  // due reminders (and other notices) on its own and announces them out loud,
+  // instead of just sitting in a feed until someone opens the app.
+  let announcing = false;
+
+  function noticeSpeechText(notice) {
+    if (notice.source === "reminder") {
+      return notice.detail && notice.detail !== "Recordatorio de Celeste"
+        ? `Recordatorio: ${notice.title}. ${notice.detail}`
+        : `Recordatorio: ${notice.title}`;
+    }
+    return `${notice.title}. ${notice.detail || ""}`.trim();
+  }
+
+  async function pollNotices() {
+    if (announcing || orbState !== "idle" || !config.token) return;
+    let notices;
+    try {
+      notices = await api("/api/v1/notifications?include_seen=false&limit=10", { method: "GET" });
+    } catch (_) {
+      return;
+    }
+    if (!notices || !notices.length) return;
+
+    announcing = true;
+    try {
+      for (const notice of notices) {
+        addLine("celeste", "CELESTE · " + (notice.source || "aviso").toUpperCase(), notice.title + (notice.detail ? " — " + notice.detail : ""));
+        await new Promise((resolve) => {
+          if (!("speechSynthesis" in window)) { resolve(); return; }
+          const utterance = new SpeechSynthesisUtterance(noticeSpeechText(notice));
+          utterance.lang = "es-CO";
+          const esVoice = window.speechSynthesis.getVoices().find((v) => v.lang && v.lang.toLowerCase().startsWith("es"));
+          if (esVoice) utterance.voice = esVoice;
+          utterance.onstart = () => { setState("speaking", "Celeste te avisa algo..."); startSyntheticPulse(); };
+          utterance.onend = resolve;
+          utterance.onerror = resolve;
+          window.speechSynthesis.speak(utterance);
+        });
+        try { await api("/api/v1/notifications/" + notice.id + "/seen", { method: "POST" }); } catch (_) {}
+      }
+    } finally {
+      stopSyntheticPulse();
+      setState("idle", "Toca el micrófono");
+      announcing = false;
+    }
+  }
+
   if (!config.token) {
     setTimeout(openSettings, 400);
   }
   checkStatus();
   setInterval(checkStatus, 30000);
+  setInterval(pollNotices, 15000);
+  setTimeout(pollNotices, 4000);
 })();
 </script>
 </body>

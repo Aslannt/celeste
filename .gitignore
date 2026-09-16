@@ -22,6 +22,7 @@ celeste-core/logs/
 # Celeste personal data (never commit by default)
 CelesteBrain/
 celeste-core/CelesteBrain/
+CelesteBrain.*/
 
 # OS
 .DS_Store
