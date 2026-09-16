@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any, Callable
 from uuid import uuid4
 
+import psutil
 from pydantic import ValidationError
 
 from app.config import Settings
@@ -19,6 +20,30 @@ from app.services.gmail import GmailClient
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.reminders import ReminderStore
 from app.services.storage import MarkdownNoteStorage, NoteNotFoundError
+
+
+def _pc_telemetry(brain_dir: Any) -> dict[str, Any]:
+    """Real CPU/RAM/disk snapshot for get_pc_status, best-effort.
+
+    Telemetry is informational only; a read failure here must never break the
+    rest of the PC status response.
+    """
+    try:
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        disk_path = brain_dir if brain_dir.exists() else brain_dir.anchor or "/"
+        disk = psutil.disk_usage(str(disk_path))
+        return {
+            "cpu_percent": cpu_percent,
+            "memory_percent": memory.percent,
+            "memory_used_gb": round(memory.used / (1024**3), 1),
+            "memory_total_gb": round(memory.total / (1024**3), 1),
+            "disk_percent": disk.percent,
+            "disk_used_gb": round(disk.used / (1024**3), 1),
+            "disk_total_gb": round(disk.total / (1024**3), 1),
+        }
+    except Exception:
+        return {}
 
 
 class ToolRisk(StrEnum):
@@ -277,7 +302,10 @@ class ToolRouter:
         self.register(
             ToolSpec(
                 name="get_pc_status",
-                description="Return the current Celeste Core PC and Brain status.",
+                description=(
+                    "Return the current Celeste Core PC and Brain status, including real CPU, "
+                    "RAM and disk usage when available."
+                ),
                 risk=ToolRisk.READ,
                 parameters={
                     "type": "object",
@@ -1053,4 +1081,5 @@ class ToolRouter:
             "os": platform.system(),
             "hostname": socket.gethostname(),
             "brain_ready": self.settings.brain_dir.exists(),
+            **_pc_telemetry(self.settings.brain_dir),
         }

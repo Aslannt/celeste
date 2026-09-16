@@ -270,6 +270,13 @@ def try_ollama_fast_path(
             f"Celeste Core esta {output.get('status', 'desconocido')} en "
             f"{output.get('hostname', 'este equipo')} ({output.get('os', 'SO desconocido')})."
         )
+        if "cpu_percent" in output:
+            reply += (
+                f" CPU al {output['cpu_percent']:.0f}%, "
+                f"RAM al {output['memory_percent']:.0f}% "
+                f"({output['memory_used_gb']}/{output['memory_total_gb']} GB), "
+                f"disco al {output['disk_percent']:.0f}%."
+            )
         return _result(
             settings=settings,
             started=started,

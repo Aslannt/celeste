@@ -101,6 +101,22 @@ def test_local_assistant_reads_pc_status(tmp_path, monkeypatch):
     assert body["events"][0]["output"]["version"] == "0.4.2"
 
 
+def test_pc_status_includes_real_telemetry(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    event = router.execute("get_pc_status", {})
+
+    assert event.status == "executed"
+    output = event.output
+    assert isinstance(output["cpu_percent"], (int, float))
+    assert 0 <= output["memory_percent"] <= 100
+    assert output["memory_total_gb"] > 0
+    assert 0 <= output["disk_percent"] <= 100
+    assert output["disk_total_gb"] > 0
+
+
 def test_confirm_tool_never_executes_before_confirmation(tmp_path, monkeypatch):
     _configure(tmp_path, monkeypatch)
     router = ToolRouter(Settings.from_env())
