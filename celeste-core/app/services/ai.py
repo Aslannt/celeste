@@ -40,7 +40,12 @@ class AssistantResult:
 class AIProvider(Protocol):
     name: str
 
-    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+    def answer(
+        self,
+        message: str,
+        router: ToolRouter,
+        history: list[dict[str, str]] | None = None,
+    ) -> AssistantResult:
         ...
 
 
@@ -267,7 +272,12 @@ class LocalRulesProvider:
         re.compile(r"^crea una nota(?: que diga| sobre)?\s+(.+)$"),
     ]
 
-    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+    def answer(
+        self,
+        message: str,
+        router: ToolRouter,
+        history: list[dict[str, str]] | None = None,
+    ) -> AssistantResult:
         text = message.strip()
         normalized = _plain(text)
         if not text:
@@ -400,12 +410,18 @@ class OpenAIProvider:
         self.client = OpenAI(api_key=api_key, timeout=timeout_seconds)
         self.model = model
 
-    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+    def answer(
+        self,
+        message: str,
+        router: ToolRouter,
+        history: list[dict[str, str]] | None = None,
+    ) -> AssistantResult:
         if not message.strip():
             raise AIProviderError("El mensaje no puede estar vacio.")
 
         tools = router.tool_schemas()
-        input_items: list[Any] = [{"role": "user", "content": message}]
+        input_items: list[Any] = [dict(item) for item in (history or [])]
+        input_items.append({"role": "user", "content": message})
         response = self._create_response(input_items, tools)
         events: list[ToolExecution] = []
 
@@ -511,7 +527,12 @@ class OllamaProvider:
         self.keep_alive = str(configured_keep_alive).strip() or "30m"
         self.client = httpx.Client(base_url=self.base_url, timeout=timeout_seconds)
 
-    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+    def answer(
+        self,
+        message: str,
+        router: ToolRouter,
+        history: list[dict[str, str]] | None = None,
+    ) -> AssistantResult:
         if not message.strip():
             raise AIProviderError("El mensaje no puede estar vacio.")
 
@@ -525,10 +546,9 @@ class OllamaProvider:
             if raw_tool_schemas
             else _CELESTE_CONVERSATION_INSTRUCTIONS
         )
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": message},
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": instructions}]
+        messages.extend(dict(item) for item in (history or []))
+        messages.append({"role": "user", "content": message})
         events: list[ToolExecution] = []
 
         for round_index in range(4):

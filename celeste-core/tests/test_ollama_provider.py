@@ -112,6 +112,37 @@ def test_ollama_provider_calls_tools_and_returns_final_answer(tmp_path, monkeypa
     )
 
 
+def test_ollama_provider_includes_conversation_history_in_messages(tmp_path, monkeypatch):
+    settings = _configure(tmp_path, monkeypatch)
+    calls: list[dict] = []
+    fake = FakeClient(
+        [{"message": {"role": "assistant", "content": "Siguiendo el hilo"}}],
+        calls,
+    )
+    monkeypatch.setattr(httpx, "Client", lambda **_: fake)
+
+    history = [
+        {"role": "user", "content": "Como funciona un motor de combustion?"},
+        {
+            "role": "assistant",
+            "content": "Convierte combustible en movimiento mediante explosiones controladas.",
+        },
+    ]
+    result = OllamaProvider(
+        settings.ollama_url,
+        settings.llm_model,
+        settings.llm_timeout_seconds,
+        settings.ollama_think,
+    ).answer("Y como se refrigera?", ToolRouter(settings), history=history)
+
+    assert result.reply == "Siguiendo el hilo"
+    sent_messages = calls[0]["json"]["messages"]
+    assert sent_messages[0]["role"] == "system"
+    assert sent_messages[1] == history[0]
+    assert sent_messages[2] == history[1]
+    assert sent_messages[3] == {"role": "user", "content": "Y como se refrigera?"}
+
+
 def test_ollama_search_memory_round_includes_grounding_context(tmp_path, monkeypatch):
     settings = _configure(tmp_path, monkeypatch)
     calls: list[dict] = []

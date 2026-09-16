@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import app
 from app.services.ai import OpenAIProvider
+from app.services.conversation import conversation_history
 from app.services.tools import ToolRisk, ToolRouter, ToolSpec
 
 TOKEN = "assistant-test-token"
@@ -244,6 +245,63 @@ def test_openai_provider_disables_remote_storage_and_parallel_tool_calls(tmp_pat
         isinstance(item, dict) and item.get("type") == "function_call_output"
         for item in calls[1]["input"]
     )
+
+
+def test_openai_provider_includes_conversation_history_in_input(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    calls: list[dict] = []
+
+    class FakeResponse:
+        def __init__(self, output, output_text=""):
+            self.output = output
+            self.output_text = output_text
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return FakeResponse([], "Siguiendo el hilo")
+
+    class FakeClient:
+        def __init__(self):
+            self.responses = FakeResponses()
+
+    import openai
+
+    monkeypatch.setattr(openai, "OpenAI", lambda **_: FakeClient())
+
+    history = [
+        {"role": "user", "content": "Como funciona un motor de combustion?"},
+        {"role": "assistant", "content": "Convierte combustible en movimiento."},
+    ]
+    provider = OpenAIProvider("test-key", "gpt-5.6", 30)
+    result = provider.answer(
+        "Y como se refrigera?",
+        ToolRouter(Settings.from_env()),
+        history=history,
+    )
+
+    assert result.reply == "Siguiendo el hilo"
+    assert calls[0]["input"][0] == history[0]
+    assert calls[0]["input"][1] == history[1]
+    assert calls[0]["input"][2] == {"role": "user", "content": "Y como se refrigera?"}
+
+
+def test_assistant_chat_persists_conversation_history(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    conversation_history.clear()
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/assistant/chat",
+                json={"message": "Busca moto"},
+                headers=HEADERS,
+            )
+        assert response.status_code == 200
+        recent = conversation_history.recent()
+        assert recent[0] == {"role": "user", "content": "Busca moto"}
+        assert recent[1]["role"] == "assistant"
+    finally:
+        conversation_history.clear()
 
 
 def test_openai_provider_stops_immediately_when_confirmation_is_required(tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.config import Settings
 from app.security import require_token
 from app.services.ai import AIProviderError, build_provider
+from app.services.conversation import conversation_history
 from app.services.fast_paths import try_ollama_fast_path
 from app.services.llm_tool_scope import scope_router_for_message
 from app.services.response_guard import guard_memory_reply, sanitize_public_events
@@ -78,6 +79,7 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
 
     fast_path = try_ollama_fast_path(payload.message, router_service, settings)
     if fast_path is not None:
+        conversation_history.append_exchange(payload.message, fast_path.reply)
         return AssistantChatResponse.model_validate(fast_path.to_dict())
 
     provider_router = (
@@ -88,7 +90,11 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
 
     try:
         provider = build_provider(settings)
-        result = provider.answer(payload.message, provider_router)
+        result = provider.answer(
+            payload.message,
+            provider_router,
+            history=conversation_history.recent(),
+        )
     except AIProviderError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -108,6 +114,7 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
         guarded_performance["response_guard"] = "memory_grounding"
         result_dict["performance"] = guarded_performance
 
+    conversation_history.append_exchange(payload.message, str(result_dict.get("reply") or ""))
     result_dict["events"] = sanitize_public_events(result_dict.get("events"))
     return AssistantChatResponse.model_validate(result_dict)
 
