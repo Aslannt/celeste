@@ -119,6 +119,7 @@ private fun CelesteScreen() {
         reminders = try {
             withContext(Dispatchers.IO) { api.listReminders(limit = 20) }
         } catch (_: Exception) { emptyList() }
+        ReminderAlarms.sync(context, reminders)
         calendarEvents = try {
             withContext(Dispatchers.IO) { api.listCalendarEvents(limit = 10) }
         } catch (_: Exception) { emptyList() }
@@ -212,6 +213,19 @@ private fun CelesteScreen() {
         ) == PackageManager.PERMISSION_GRANTED
         if (hasPermission) launchSpeechRecognizer()
         else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     LaunchedEffect(assistantReply) {
@@ -324,6 +338,7 @@ private fun CelesteScreen() {
                         runIo {
                             val api = CelesteApi(store.load())
                             withContext(Dispatchers.IO) { api.completeReminder(reminder.id) }
+                            ReminderAlarms.cancel(context, reminder.id)
                             loadDailyContext(api)
                             loadNotifications(api)
                             message = "Recordatorio completado"
