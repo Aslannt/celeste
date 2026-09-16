@@ -129,7 +129,10 @@
   <header>
     <div class="brand">Celeste</div>
     <div class="status" id="statusText">sin conectar</div>
-    <button class="icon" id="settingsButton" aria-label="Ajustes">&#9881;</button>
+    <div>
+      <button class="icon" id="resetConversationButton" aria-label="Nueva conversación" title="Nueva conversación">&#8635;</button>
+      <button class="icon" id="settingsButton" aria-label="Ajustes">&#9881;</button>
+    </div>
   </header>
 
   <div id="stage">
@@ -197,6 +200,7 @@
     confirmCancel: document.getElementById("confirmCancel"),
     canvas: document.getElementById("orb"),
     conversationBadge: document.getElementById("conversationBadge"),
+    resetConversationButton: document.getElementById("resetConversationButton"),
   };
 
   // Once a turn started by voice finishes, keep listening automatically so
@@ -496,6 +500,12 @@
     els.settings.style.display = "flex";
   }
   function closeSettings() { els.settings.style.display = "none"; }
+
+  els.resetConversationButton.addEventListener("click", async () => {
+    try { await api("/api/v1/assistant/conversation", { method: "DELETE" }); } catch (_) {}
+    els.transcript.innerHTML = "";
+    hideConfirmation();
+  });
 
   els.settingsButton.addEventListener("click", openSettings);
   els.settingsClose.addEventListener("click", closeSettings);

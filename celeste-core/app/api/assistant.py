@@ -119,6 +119,12 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
     return AssistantChatResponse.model_validate(result_dict)
 
 
+@router.delete("/conversation")
+def reset_conversation() -> dict[str, bool]:
+    conversation_history.clear()
+    return {"cleared": True}
+
+
 @router.post("/confirm/{confirmation_id}", response_model=ToolEventResponse)
 def confirm_assistant_action(confirmation_id: str) -> ToolEventResponse:
     router_service = ToolRouter(Settings.from_env())

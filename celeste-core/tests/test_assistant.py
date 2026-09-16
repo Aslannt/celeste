@@ -263,6 +263,27 @@ def test_openai_provider_disables_remote_storage_and_parallel_tool_calls(tmp_pat
     )
 
 
+def test_reset_conversation_endpoint_clears_history(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    conversation_history.clear()
+    try:
+        with TestClient(app) as client:
+            client.post(
+                "/api/v1/assistant/chat",
+                json={"message": "Busca moto"},
+                headers=HEADERS,
+            )
+            assert conversation_history.recent()
+
+            response = client.delete("/api/v1/assistant/conversation", headers=HEADERS)
+
+        assert response.status_code == 200
+        assert response.json() == {"cleared": True}
+        assert conversation_history.recent() == []
+    finally:
+        conversation_history.clear()
+
+
 def test_openai_provider_includes_conversation_history_in_input(tmp_path, monkeypatch):
     _configure(tmp_path, monkeypatch)
     calls: list[dict] = []
