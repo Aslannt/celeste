@@ -105,7 +105,7 @@
 - [x] Marcar contenido Calendar como externo/no confiable
 - [x] Inyectar reloj local actual en schemas de scheduling para resolver expresiones relativas
 - [x] Modelos/metodos Android para Calendar y recordatorios
-- [ ] CI final en verde
+- [x] CI final en verde
 - [ ] Autorizar Calendar en el PC real
 - [ ] Validar lectura y CRUD de eventos inocuos
 - [ ] Validar un recordatorio real y su notificacion
