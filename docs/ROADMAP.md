@@ -38,6 +38,16 @@
 - [x] Agregar buscador en Celeste Android
 - [x] Validar FTS5 y busqueda en el PC y telefono reales
 
+## V0.3.1 - memoria semantica (segundo cerebro)
+
+- [x] Embeddings locales via Ollama (`bge-m3`, elegido sobre `nomic-embed-text` por soporte multilingue/espanol) sobre el mismo `brain-index.sqlite3`, sin base de datos vectorial aparte
+- [x] Busqueda hibrida FTS5 + semantica por Reciprocal Rank Fusion en `search_ids`, sin cambiar la interfaz de `search_memory`
+- [x] Degradacion automatica a FTS5-only si Ollama/el modelo no responden; nunca bloquea la escritura de notas
+- [x] Cache de embeddings por hash de contenido (rebuild no re-embebe notas sin cambios) y batch en un solo llamado
+- [x] Deshabilitado por defecto (`CELESTE_EMBEDDINGS_ENABLED=false`), igual que Gmail/Calendar; requiere `ollama pull bge-m3`
+- [x] Validado con datos reales: consulta sin ninguna palabra en comun con la nota objetivo la encontro en primer lugar (ver ADR-010)
+- [ ] Portar la misma logica de busqueda hibrida a Android si el buscador nativo la necesita
+
 ## V0.4 - IA y Tool Router
 
 - [x] Abstraccion de proveedores (`local_rules` / `ollama` / `openai`)

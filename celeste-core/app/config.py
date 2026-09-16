@@ -34,6 +34,8 @@ class Settings:
     calendar_id: str
     calendar_time_zone: str
     reminder_poll_seconds: int
+    embeddings_enabled: bool
+    embedding_model: str
     version: str = "0.4.2"
 
     @classmethod
@@ -130,6 +132,11 @@ class Settings:
             reminder_poll_seconds = 30
         reminder_poll_seconds = max(5, min(reminder_poll_seconds, 300))
 
+        embeddings_enabled = _env_bool("CELESTE_EMBEDDINGS_ENABLED", False)
+        embedding_model = (
+            os.getenv("CELESTE_EMBEDDING_MODEL", "bge-m3").strip() or "bge-m3"
+        )
+
         return cls(
             api_token=api_token,
             brain_dir=brain_dir,
@@ -149,4 +156,6 @@ class Settings:
             calendar_id=calendar_id,
             calendar_time_zone=calendar_time_zone,
             reminder_poll_seconds=reminder_poll_seconds,
+            embeddings_enabled=embeddings_enabled,
+            embedding_model=embedding_model,
         )

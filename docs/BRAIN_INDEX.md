@@ -34,4 +34,13 @@ GET /api/v1/notes/search?q=<texto>&limit=20
 
 La busqueda requiere el mismo `X-Celeste-Token` que el resto de endpoints de notas.
 
-V0.3 es busqueda lexical local. No usa embeddings, RAG ni un proveedor LLM.
+## Memoria semantica (hibrida FTS5 + embeddings)
+
+Ademas de la coincidencia lexical, el mismo `brain-index.sqlite3` guarda un embedding por nota en la tabla `notes_embeddings` (vector como BLOB, sin extension nativa de SQLite ni base de datos vectorial aparte - a esta escala, similitud de coseno en Python puro sobre unos cientos de notas es microsegundos). Sigue siendo caché 100% reconstruible: se puede borrar el archivo y Core lo regenera, embeddings incluidos.
+
+- Modelo: `bge-m3` via Ollama (`CELESTE_EMBEDDING_MODEL`, gratis, local, multilingue - elegido sobre `nomic-embed-text` porque las notas estan en espanol). Requiere `ollama pull bge-m3` una vez.
+- Deshabilitado por defecto (`CELESTE_EMBEDDINGS_ENABLED=false`), mismo patron que Gmail/Calendar: hay que habilitarlo explicitamente despues de bajar el modelo.
+- Cada nota guarda un hash de su contenido junto al vector; al reconstruir el indice solo se recalculan embeddings de notas nuevas o cambiadas, no todas cada vez.
+- `search_ids` combina el ranking de FTS5 y el de similitud semantica por **Reciprocal Rank Fusion** (posicion, no score normalizado - bm25 y coseno viven en escalas distintas).
+- Si Ollama o el modelo no responden, la busqueda degrada sola a solo-FTS5; nunca rompe `search_memory` ni la escritura de notas (ver [ADR-010](DECISIONS.md)).
+- La interfaz de `search_memory` no cambio: mismo nombre, mismos parametros. El upgrade es interno a `BrainIndex`.

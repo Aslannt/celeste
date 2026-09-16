@@ -17,6 +17,7 @@ from app.config import Settings
 from app.models import NoteCreate, NoteUpdate
 from app.services.audit import ToolAuditLog
 from app.services.calendar import CalendarClient
+from app.services.embeddings import build_embedding_client
 from app.services.gmail import GmailClient
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.reminders import ReminderStore
@@ -168,7 +169,7 @@ class ToolRouter:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.storage = MarkdownNoteStorage(settings.brain_dir)
-        self.index = BrainIndex(settings.brain_dir)
+        self.index = BrainIndex(settings.brain_dir, embedder=build_embedding_client(settings))
         self.audit = ToolAuditLog(settings.brain_dir)
         self.reminders = ReminderStore(settings.brain_dir)
         self.gmail: GmailClient | None = None

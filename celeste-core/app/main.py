@@ -17,6 +17,7 @@ from app.api.status import router as status_router
 from app.config import Settings
 from app.services.calendar import CalendarClient
 from app.services.gmail import GmailClient, GmailError
+from app.services.embeddings import build_embedding_client
 from app.services.gmail_monitor import GmailMonitor
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.notifications import NotificationStoreError
@@ -67,8 +68,14 @@ async def lifespan(_: FastAPI):
     reminder_monitor_task: asyncio.Task[None] | None = None
 
     try:
-        indexed = BrainIndex(settings.brain_dir).rebuild(storage.list(include_deleted=False))
-        print(f"[Celeste] Brain index ready: {indexed} note(s) indexed.")
+        embedder = build_embedding_client(settings)
+        indexed = BrainIndex(settings.brain_dir, embedder=embedder).rebuild(
+            storage.list(include_deleted=False)
+        )
+        print(
+            f"[Celeste] Brain index ready: {indexed} note(s) indexed"
+            f"{' with semantic search' if embedder else ' (keyword-only, embeddings disabled)'}."
+        )
     except BrainIndexError as exc:
         # Search may be unavailable, but Markdown note storage must remain usable.
         print(f"[Celeste] WARNING: Brain index unavailable: {exc}")

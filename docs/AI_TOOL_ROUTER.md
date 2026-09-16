@@ -89,7 +89,7 @@ Ver [ADR-009](DECISIONS.md): cualquier resumen que el usuario deba poder confiar
 
 Brain y PC:
 
-- `search_memory` - READ
+- `search_memory` - READ (hibrido FTS5 + embeddings semanticos, ver `docs/BRAIN_INDEX.md`; degrada solo a FTS5 si el embedder no responde)
 - `create_note` - SAFE_WRITE
 - `update_note` - CONFIRM
 - `delete_note` - CONFIRM

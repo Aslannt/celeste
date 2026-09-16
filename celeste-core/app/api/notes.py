@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from app.config import Settings
 from app.models import Note, NoteCreate, NoteUpdate
 from app.security import require_token
+from app.services.embeddings import build_embedding_client
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.storage import IdempotencyConflictError, MarkdownNoteStorage, NoteNotFoundError
 
@@ -20,7 +21,8 @@ def _storage() -> MarkdownNoteStorage:
 
 
 def _index() -> BrainIndex:
-    return BrainIndex(Settings.from_env().brain_dir)
+    settings = Settings.from_env()
+    return BrainIndex(settings.brain_dir, embedder=build_embedding_client(settings))
 
 
 def _sync_index(note: Note) -> None:
