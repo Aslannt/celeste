@@ -565,13 +565,53 @@
     }
   }
 
+  // ---------- Daily briefing ----------
+  // First time the page opens on a given calendar day, Celeste greets on its
+  // own with a short summary instead of waiting to be asked - the first step
+  // toward a real "morning routine". Deliberately NOT routed through the LLM:
+  // a free-form "summarize my day" prompt let qwen3.5:9b fabricate a
+  // plausible-sounding but entirely fictional agenda (a phone call, a dentist
+  // appointment, none of it real) instead of calling list_reminders. For
+  // something the user will trust as "what I actually have today", the app
+  // reads the real data itself and never lets the model invent it.
+  const BRIEFING_STORAGE_KEY = "celeste_last_briefing_date";
+
+  async function maybeSendDailyBriefing() {
+    if (!config.token || announcing || orbState !== "idle") return;
+    const today = new Date().toDateString();
+    if (localStorage.getItem(BRIEFING_STORAGE_KEY) === today) return;
+
+    announcing = true;
+    try {
+      const reminders = await api("/api/v1/reminders?limit=20", { method: "GET" });
+      const pending = (reminders || []).filter((r) => !r.done_at && !r.cancelled_at);
+      let text;
+      if (pending.length === 0) {
+        text = "Buenos días. No tienes recordatorios pendientes por ahora.";
+      } else {
+        const titles = pending.slice(0, 5).map((r) => r.title).join("; ");
+        const plural = pending.length === 1 ? "" : "s";
+        text = `Buenos días. Tienes ${pending.length} recordatorio${plural} pendiente${plural}: ${titles}.`;
+      }
+      addLine("celeste", "CELESTE · BUENOS DÍAS", text);
+      speak(text);
+      localStorage.setItem(BRIEFING_STORAGE_KEY, today);
+    } catch (_) {
+      // Core wasn't reachable yet; try again on the next load instead of
+      // silently marking today's briefing as done.
+    } finally {
+      announcing = false;
+    }
+  }
+
   if (!config.token) {
     setTimeout(openSettings, 400);
   }
   checkStatus();
   setInterval(checkStatus, 30000);
   setInterval(pollNotices, 15000);
-  setTimeout(pollNotices, 4000);
+  setTimeout(maybeSendDailyBriefing, 3000);
+  setTimeout(pollNotices, 6000);
 })();
 </script>
 </body>
