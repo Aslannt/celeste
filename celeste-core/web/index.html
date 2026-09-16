@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Celeste</title>
+<style>
+  :root {
+    --bg: #05070a;
+    --cyan: #4fd6ff;
+    --cyan-dim: #1c5b73;
+    --amber: #ffb84f;
+    --danger: #ff5f6d;
+    --text: #d9f4ff;
+    --text-dim: #6f8a97;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  #app {
+    display: flex; flex-direction: column; height: 100%;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; flex: 0 0 auto;
+  }
+  header .brand {
+    font-size: 14px; letter-spacing: 4px; color: var(--text-dim); text-transform: uppercase;
+  }
+  header .status {
+    font-size: 12px; color: var(--text-dim);
+  }
+  header button.icon {
+    background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer;
+    padding: 6px 10px;
+  }
+  header button.icon:hover { color: var(--cyan); }
+
+  #stage {
+    flex: 1 1 auto; position: relative; display: flex; align-items: center; justify-content: center;
+    min-height: 0;
+  }
+  canvas#orb { width: min(70vw, 60vh); height: min(70vw, 60vh); }
+
+  #stateLabel {
+    position: absolute; bottom: 14px; left: 0; right: 0; text-align: center;
+    font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim);
+  }
+
+  #transcript {
+    flex: 0 0 auto; max-height: 30vh; overflow-y: auto;
+    padding: 10px 18px; font-size: 14px; line-height: 1.5;
+  }
+  #transcript .line { margin-bottom: 10px; }
+  #transcript .line.user { color: var(--text-dim); }
+  #transcript .line.celeste { color: var(--text); }
+  #transcript .eyebrow {
+    display: block; font-size: 10px; letter-spacing: 2px; color: var(--cyan-dim); margin-bottom: 2px;
+  }
+
+  #confirmBar {
+    display: none; margin: 0 18px 10px 18px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(255,184,79,0.1); border: 1px solid rgba(255,184,79,0.35);
+    font-size: 13px;
+  }
+  #confirmBar .actions { margin-top: 8px; display: flex; gap: 10px; }
+  #confirmBar button { flex: 1; padding: 8px; border-radius: 8px; border: none; font-size: 13px; cursor: pointer; }
+  #confirmBar button.confirm { background: var(--cyan); color: #04222c; }
+  #confirmBar button.cancel { background: rgba(255,255,255,0.08); color: var(--text); }
+
+  footer {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    padding: 22px; gap: 18px;
+  }
+  #micButton {
+    width: 78px; height: 78px; border-radius: 50%; border: none; cursor: pointer;
+    background: radial-gradient(circle at 35% 30%, #1a2f38, #04141a);
+    box-shadow: 0 0 0 1px rgba(79,214,255,0.3), 0 0 24px rgba(79,214,255,0.15);
+    color: var(--cyan); font-size: 26px; display: flex; align-items: center; justify-content: center;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+  }
+  #micButton:active { transform: scale(0.95); }
+  #micButton.active {
+    box-shadow: 0 0 0 1px rgba(79,214,255,0.6), 0 0 36px rgba(79,214,255,0.55);
+  }
+
+  #settings {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+    align-items: center; justify-content: center; z-index: 10;
+  }
+  #settings .panel {
+    background: #0b1116; border: 1px solid rgba(79,214,255,0.25); border-radius: 14px;
+    padding: 22px; width: min(90vw, 360px);
+  }
+  #settings h2 { margin: 0 0 14px 0; font-size: 15px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; }
+  #settings label { display: block; font-size: 12px; color: var(--text-dim); margin: 12px 0 4px; }
+  #settings input {
+    width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);
+    background: #060a0d; color: var(--text); font-size: 14px;
+  }
+  #settings .row { display: flex; gap: 10px; margin-top: 18px; }
+  #settings button { flex: 1; padding: 10px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; }
+  #settings button.save { background: var(--cyan); color: #04222c; }
+  #settings button.close { background: rgba(255,255,255,0.08); color: var(--text); }
+  #settings small { color: var(--text-dim); display: block; margin-top: 10px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">Celeste</div>
+    <div class="status" id="statusText">sin conectar</div>
+    <button class="icon" id="settingsButton" aria-label="Ajustes">&#9881;</button>
+  </header>
+
+  <div id="stage">
+    <canvas id="orb" width="600" height="600"></canvas>
+    <div id="stateLabel">Toca el micrófono</div>
+  </div>
+
+  <div id="confirmBar">
+    <div id="confirmText"></div>
+    <div class="actions">
+      <button class="cancel" id="confirmCancel">Cancelar</button>
+      <button class="confirm" id="confirmOk">Confirmar</button>
+    </div>
+  </div>
+
+  <div id="transcript"></div>
+
+  <footer>
+    <button id="micButton" aria-label="Hablar">&#127908;</button>
+  </footer>
+</div>
+
+<div id="settings">
+  <div class="panel">
+    <h2>Conexión</h2>
+    <label for="coreUrl">URL de Celeste Core</label>
+    <input id="coreUrl" placeholder="http://192.168.1.12:8000" />
+    <label for="coreToken">Token (X-Celeste-Token)</label>
+    <input id="coreToken" type="password" placeholder="tu token privado" />
+    <div class="row">
+      <button class="close" id="settingsClose">Cerrar</button>
+      <button class="save" id="settingsSave">Guardar</button>
+    </div>
+    <small>El token vive solo en este navegador (localStorage). Nunca se envía a nadie más que a tu propio Celeste Core.</small>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const els = {
+    status: document.getElementById("statusText"),
+    stateLabel: document.getElementById("stateLabel"),
+    mic: document.getElementById("micButton"),
+    transcript: document.getElementById("transcript"),
+    settings: document.getElementById("settings"),
+    settingsButton: document.getElementById("settingsButton"),
+    settingsClose: document.getElementById("settingsClose"),
+    settingsSave: document.getElementById("settingsSave"),
+    coreUrl: document.getElementById("coreUrl"),
+    coreToken: document.getElementById("coreToken"),
+    confirmBar: document.getElementById("confirmBar"),
+    confirmText: document.getElementById("confirmText"),
+    confirmOk: document.getElementById("confirmOk"),
+    confirmCancel: document.getElementById("confirmCancel"),
+    canvas: document.getElementById("orb"),
+  };
+
+  const config = {
+    get coreUrl() { return localStorage.getItem("celeste_core_url") || window.location.origin; },
+    set coreUrl(v) { localStorage.setItem("celeste_core_url", v); },
+    get token() { return localStorage.getItem("celeste_token") || ""; },
+    set token(v) { localStorage.setItem("celeste_token", v); },
+  };
+
+  // ---------- Orb visualizer ----------
+  const ctx = els.canvas.getContext("2d");
+  let level = 0; // 0..1 smoothed amplitude/pulse
+  let targetLevel = 0;
+  let orbState = "idle"; // idle | listening | thinking | speaking
+  let hue = 190; // cyan
+
+  const stateColor = {
+    idle: "79,214,255",
+    listening: "79,214,255",
+    thinking: "255,184,79",
+    speaking: "79,214,255",
+  };
+
+  function setState(next, label) {
+    orbState = next;
+    els.stateLabel.textContent = label;
+    els.mic.classList.toggle("active", next === "listening");
+  }
+
+  function drawOrb(t) {
+    const w = els.canvas.width, h = els.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2;
+    const base = Math.min(w, h) * 0.22;
+
+    level += (targetLevel - level) * 0.15;
+    const pulse = orbState === "idle" ? 0.05 + 0.03 * Math.sin(t / 900) : level;
+    const color = stateColor[orbState];
+
+    for (let ring = 0; ring < 3; ring++) {
+      const r = base + ring * 26 + pulse * 60;
+      const rot = t / (2000 + ring * 700) * (ring % 2 === 0 ? 1 : -1);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, rot, rot + Math.PI * 1.4);
+      ctx.strokeStyle = `rgba(${color}, ${0.35 - ring * 0.08})`;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+
+    const glowR = base * (0.55 + pulse * 0.5);
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+    grad.addColorStop(0, `rgba(${color}, 0.9)`);
+    grad.addColorStop(0.6, `rgba(${color}, 0.35)`);
+    grad.addColorStop(1, `rgba(${color}, 0)`);
+    ctx.beginPath();
+    ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, base * (0.32 + pulse * 0.12), 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${color}, 0.9)`;
+    ctx.fill();
+
+    requestAnimationFrame(drawOrb);
+  }
+  requestAnimationFrame(drawOrb);
+
+  // Idle/speaking synthetic pulse when we have no real amplitude source.
+  let syntheticTimer = null;
+  function startSyntheticPulse() {
+    stopSyntheticPulse();
+    syntheticTimer = setInterval(() => {
+      targetLevel = 0.35 + Math.random() * 0.55;
+    }, 140);
+  }
+  function stopSyntheticPulse() {
+    if (syntheticTimer) clearInterval(syntheticTimer);
+    syntheticTimer = null;
+    targetLevel = 0;
+  }
+
+  // ---------- Mic amplitude (real) while listening ----------
+  let audioCtx = null, analyser = null, micStream = null, micData = null, micRaf = null;
+
+  async function startMicVisualizer() {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(micStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      micData = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteFrequencyData(micData);
+        const avg = micData.reduce((a, b) => a + b, 0) / micData.length;
+        targetLevel = Math.min(1, avg / 90);
+        micRaf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (err) {
+      // No mic amplitude available; the orb will just idle-pulse instead.
+      console.warn("Celeste: no se pudo abrir el analizador de audio", err);
+    }
+  }
+
+  function stopMicVisualizer() {
+    if (micRaf) cancelAnimationFrame(micRaf);
+    micRaf = null;
+    if (micStream) micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    if (audioCtx) audioCtx.close();
+    audioCtx = null;
+    targetLevel = 0;
+  }
+
+  // ---------- Transcript ----------
+  function addLine(role, eyebrow, text) {
+    const div = document.createElement("div");
+    div.className = "line " + role;
+    if (eyebrow) {
+      const small = document.createElement("span");
+      small.className = "eyebrow";
+      small.textContent = eyebrow;
+      div.appendChild(small);
+    }
+    div.appendChild(document.createTextNode(text));
+    els.transcript.appendChild(div);
+    els.transcript.scrollTop = els.transcript.scrollHeight;
+  }
+
+  // ---------- Speech recognition (STT) ----------
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognizer = null;
+  if (SpeechRecognitionCtor) {
+    recognizer = new SpeechRecognitionCtor();
+    recognizer.lang = "es-CO";
+    recognizer.continuous = false;
+    recognizer.interimResults = false;
+
+    recognizer.onstart = () => {
+      setState("listening", "Escuchando...");
+      startMicVisualizer();
+    };
+    recognizer.onerror = (e) => {
+      setState("idle", "Toca el micrófono");
+      stopMicVisualizer();
+      addLine("celeste", "CELESTE", "No te escuché bien (" + e.error + "). Intenta de nuevo.");
+    };
+    recognizer.onend = () => {
+      stopMicVisualizer();
+    };
+    recognizer.onresult = (event) => {
+      const heard = event.results[0][0].transcript;
+      addLine("user", "TÚ", heard);
+      sendToAssistant(heard);
+    };
+  }
+
+  function toggleListening() {
+    if (!recognizer) {
+      addLine("celeste", "CELESTE", "Este navegador no soporta reconocimiento de voz. Prueba en Chrome.");
+      return;
+    }
+    if (orbState === "listening") {
+      recognizer.stop();
+      return;
+    }
+    if (!config.token) {
+      openSettings();
+      return;
+    }
+    try { recognizer.start(); } catch (_) { /* already started */ }
+  }
+
+  // ---------- Text-to-speech ----------
+  function speak(text) {
+    if (!("speechSynthesis" in window) || !text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "es-CO";
+    const voices = window.speechSynthesis.getVoices();
+    const esVoice = voices.find((v) => v.lang && v.lang.toLowerCase().startsWith("es"));
+    if (esVoice) utterance.voice = esVoice;
+
+    utterance.onstart = () => { setState("speaking", "Celeste responde..."); startSyntheticPulse(); };
+    utterance.onend = () => { stopSyntheticPulse(); setState("idle", "Toca el micrófono"); };
+    utterance.onerror = () => { stopSyntheticPulse(); setState("idle", "Toca el micrófono"); };
+
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // ---------- Celeste API ----------
+  async function api(path, options) {
+    const res = await fetch(config.coreUrl + path, Object.assign({
+      headers: Object.assign({ "Content-Type": "application/json", "X-Celeste-Token": config.token },
+        (options && options.headers) || {}),
+    }, options));
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error("HTTP " + res.status + " " + body);
+    }
+    return res.json();
+  }
+
+  let pendingConfirmationId = null;
+
+  function showConfirmation(event) {
+    pendingConfirmationId = event.confirmation_id;
+    els.confirmText.textContent = event.summary || ("Confirmar " + event.tool + "?");
+    els.confirmBar.style.display = "block";
+  }
+
+  function hideConfirmation() {
+    pendingConfirmationId = null;
+    els.confirmBar.style.display = "none";
+  }
+
+  els.confirmOk.addEventListener("click", async () => {
+    if (!pendingConfirmationId) return;
+    try {
+      const result = await api("/api/v1/assistant/confirm/" + pendingConfirmationId, { method: "POST" });
+      addLine("celeste", "CELESTE", "Hecho: " + (result.summary || result.tool));
+    } catch (err) {
+      addLine("celeste", "CELESTE", "No pude confirmar la acción.");
+    }
+    hideConfirmation();
+  });
+
+  els.confirmCancel.addEventListener("click", async () => {
+    if (!pendingConfirmationId) return;
+    try { await api("/api/v1/assistant/confirm/" + pendingConfirmationId, { method: "DELETE" }); } catch (_) {}
+    hideConfirmation();
+  });
+
+  async function sendToAssistant(message) {
+    setState("thinking", "Pensando...");
+    startSyntheticPulse();
+    try {
+      const result = await api("/api/v1/assistant/chat", {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      });
+      stopSyntheticPulse();
+      addLine("celeste", "CELESTE (" + (result.provider || "") + ")", result.reply || "");
+
+      const confirmationEvent = (result.events || []).find((e) => e.status === "confirmation_required");
+      if (confirmationEvent) showConfirmation(confirmationEvent);
+
+      setState("idle", "Toca el micrófono");
+      speak(result.reply);
+    } catch (err) {
+      stopSyntheticPulse();
+      setState("idle", "Toca el micrófono");
+      addLine("celeste", "CELESTE", "Error hablando con Core: " + err.message);
+    }
+  }
+
+  els.mic.addEventListener("click", toggleListening);
+
+  // ---------- Settings ----------
+  function openSettings() {
+    els.coreUrl.value = config.coreUrl;
+    els.coreToken.value = config.token;
+    els.settings.style.display = "flex";
+  }
+  function closeSettings() { els.settings.style.display = "none"; }
+
+  els.settingsButton.addEventListener("click", openSettings);
+  els.settingsClose.addEventListener("click", closeSettings);
+  els.settingsSave.addEventListener("click", () => {
+    config.coreUrl = els.coreUrl.value.trim().replace(/\/$/, "");
+    config.token = els.coreToken.value.trim();
+    closeSettings();
+    checkStatus();
+  });
+
+  // ---------- Status check ----------
+  async function checkStatus() {
+    try {
+      const status = await api("/api/v1/status", { method: "GET" });
+      els.status.textContent = status.status === "online" ? ("en línea · " + status.hostname) : status.status;
+    } catch (err) {
+      els.status.textContent = "sin conexión";
+    }
+  }
+
+  if (!config.token) {
+    setTimeout(openSettings, 400);
+  }
+  checkStatus();
+  setInterval(checkStatus, 30000);
+})();
+</script>
+</body>
+</html>

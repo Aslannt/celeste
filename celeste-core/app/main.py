@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager, suppress
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.assistant import router as assistant_router
 from app.api.integrations import router as integrations_router
@@ -132,11 +135,16 @@ app.include_router(integrations_router)
 app.include_router(notifications_router)
 app.include_router(reminders_router)
 
+_web_dir = Path(__file__).resolve().parents[1] / "web"
+if _web_dir.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(_web_dir), html=True), name="ui")
+
 
 @app.get("/")
 def root() -> dict[str, str]:
     return {
         "name": "Celeste Core",
+        "ui": "/ui/",
         "docs": "/docs",
         "status": "/api/v1/status",
         "assistant": "/api/v1/assistant/chat",
