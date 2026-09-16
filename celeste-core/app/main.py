@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assistant import router as assistant_router
+from app.api.code_task import router as code_task_router
 from app.api.integrations import router as integrations_router
 from app.api.notes import router as notes_router
 from app.api.notifications import router as notifications_router
@@ -141,6 +142,7 @@ app.include_router(assistant_router)
 app.include_router(integrations_router)
 app.include_router(notifications_router)
 app.include_router(reminders_router)
+app.include_router(code_task_router)
 
 _web_dir = Path(__file__).resolve().parents[1] / "web"
 if _web_dir.is_dir():

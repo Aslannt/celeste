@@ -15,6 +15,8 @@ Un proveedor de IA nunca recibe acceso directo al shell, al sistema de archivos 
 
 La infraestructura de confirmacion genera un ID temporal. El handler sensible no se ejecuta antes de confirmar.
 
+`code_task` (delegar codigo a un agente en sandbox, ver [docs/CODE_TASK.md](CODE_TASK.md) y [ADR-011](DECISIONS.md)) lleva esto un paso mas alla: ni siquiera esta registrado en el Tool Router, asi que la conversacion normal con Celeste no puede llegar a el bajo ningun nivel de riesgo. Es su propio flujo explicitamente humano (`/api/v1/code-task/*`), y ademas Celeste solo prepara un script - nunca lo ejecuta ella misma.
+
 ## Proveedores
 
 Celeste soporta tres proveedores intercambiables via `CELESTE_LLM_PROVIDER`:

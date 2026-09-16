@@ -48,6 +48,19 @@
 - [x] Validado con datos reales: consulta sin ninguna palabra en comun con la nota objetivo la encontro en primer lugar (ver ADR-010)
 - [ ] Portar la misma logica de busqueda hibrida a Android si el buscador nativo la necesita
 
+## V0.3.2 - code_task (delegar codigo en sandbox, segundo cerebro)
+
+- [x] `CodeTaskRunner`: brief de forma fija (objetivo, archivos relevantes, criterio de aceptacion, restricciones, correr tests), lista blanca de repositorios permitidos
+- [x] Imagen Docker con Claude Code CLI (`celeste-core/docker/code-task/Dockerfile`), autenticada via `claude setup-token` (sesion de la suscripcion, no API key aparte)
+- [x] Celeste solo prepara y genera el script; nunca ejecuta Docker/Claude ella misma - el humano corre el script generado (ver ADR-011)
+- [x] Permisos acotados con `--allowedTools` (no bypass total), por tener red habilitada en el contenedor
+- [x] `code_task` fuera del Tool Router: inalcanzable desde `/assistant/chat` o cualquier herramienta
+- [x] El resultado se guarda en Celeste Brain (indexado, incluye busqueda semantica) via callback del script
+- [ ] Brief conversacional con el modelo local completando huecos desde Brain (max 3 preguntas) en vez de formulario manual
+- [ ] Router multi-proveedor con fallback a Ollama al agotar cuota (bounce-router / opencode-quota-failover)
+- [ ] Acceso desde celular/moto (depende de la infraestructura de dos nodos, seccion 3.6 del documento de diseno)
+- [ ] Validar un `code_task` real de punta a punta (brief -> script -> ejecucion manual -> resultado en Brain)
+
 ## V0.4 - IA y Tool Router
 
 - [x] Abstraccion de proveedores (`local_rules` / `ollama` / `openai`)

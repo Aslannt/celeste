@@ -57,3 +57,20 @@ Decidido 2026-09-16, primera gran apuesta de la sesion de planeacion previa ("se
 - **Resiliencia**: deshabilitado por defecto (`CELESTE_EMBEDDINGS_ENABLED=false`), mismo patron opt-in que Gmail/Calendar - requiere `ollama pull bge-m3` primero. Si Ollama o el modelo fallan, la busqueda degrada sola a FTS5 y la escritura de notas nunca se bloquea (timeout corto de 5s en el cliente de embeddings, para no colgar `create_note` si Ollama esta caido).
 
 Encontrado en el camino: los tests de Celeste cargan `celeste-core/.env` real via `Settings.from_env()` (`override=False`), asi que cualquier variable nueva no mockeada explicitamente por un test hereda lo que sea que tenga el `.env` del desarrollador. Se agrego `tests/conftest.py` con un fixture autouse que fija `CELESTE_EMBEDDINGS_ENABLED=false` por defecto en toda la suite, para que activar la funcionalidad en el `.env` real no vuelva a contaminar tests que no la mencionan.
+
+## ADR-011: `code_task` prepara, nunca ejecuta - el humano aprieta el boton
+
+Decidido 2026-09-16, seccion 3.4/3.5 del documento de diseno original ("segundo cerebro"). El objetivo era una herramienta `code_task` que delegara tareas de codigo a un agente (Claude Code CLI) en un sandbox, sin romper ADR-005.
+
+Al implementar la primera version (Core invocando Docker+Claude directamente via `subprocess`, con `--permission-mode bypassPermissions` dentro del contenedor), el propio clasificador de seguridad de Claude Code bloqueo el cambio con el motivo "Create Unsafe Agents" - dos veces, incluso tras acotar los permisos con `--allowedTools` en vez de un bypass total. El mensaje del bloqueo fue explicito: es una decision de configuracion del usuario, no algo para resolver cambiando el diseño del codigo.
+
+Decision: en vez de buscar una forma de sortear ese bloqueo, se aplico el mismo principio de ADR-005 un nivel arriba. El LLM nunca toca el sistema directamente; ahora tampoco la propia automatizacion de Celeste dispara un agente de codigo autonomo sin que un humano ejecute el paso final:
+
+- `code_task` prepara un brief y **genera un script** (`.ps1`) listo para correr - texto, no ejecucion. Celeste nunca invoca Docker ni Claude Code por si misma.
+- El usuario revisa el script y lo corre el mismo, en su propia terminal.
+- El script, al terminar, llama de vuelta a Celeste (`POST /api/v1/code-task/record`) solo para guardar el resultado en Brain - eso si es automatico, porque guardar un resultado no es lo mismo que generarlo.
+- `code_task` no esta registrado en el Tool Router: ni la conversacion normal con Celeste puede llegar a el.
+
+Ademas, aprovechando la investigacion: la propia documentacion de Claude Code recomienda `--allow-dangerously-skip-permissions` solo para sandboxes *sin* acceso a red. El contenedor de `code_task` si tiene red (necesaria para instalar dependencias reales), asi que el script generado usa `--allowedTools` acotado (edicion de archivos + comandos especificos del proyecto) en vez de un bypass total, para no dejar una via de exfiltracion del propio token si un agente mal dirigido decidiera usarla.
+
+Ver [docs/CODE_TASK.md](CODE_TASK.md) para el flujo completo y el setup.

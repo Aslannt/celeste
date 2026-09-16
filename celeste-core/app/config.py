@@ -36,6 +36,10 @@ class Settings:
     reminder_poll_seconds: int
     embeddings_enabled: bool
     embedding_model: str
+    code_task_allowed_dirs: list[Path]
+    code_task_oauth_token: str | None
+    code_task_image: str
+    code_task_timeout_seconds: int
     version: str = "0.4.2"
 
     @classmethod
@@ -137,6 +141,32 @@ class Settings:
             os.getenv("CELESTE_EMBEDDING_MODEL", "bge-m3").strip() or "bge-m3"
         )
 
+        raw_allowed_dirs = os.getenv("CELESTE_CODE_TASK_ALLOWED_DIRS", "").strip()
+        if raw_allowed_dirs:
+            code_task_allowed_dirs = [
+                Path(item.strip()).expanduser().resolve()
+                for item in raw_allowed_dirs.split(";")
+                if item.strip()
+            ]
+        else:
+            # Default to just this repo. code_task is opt-in by nature (it also
+            # requires CELESTE_CODE_TASK_OAUTH_TOKEN and a built Docker image),
+            # so a conservative default here is safe rather than limiting.
+            code_task_allowed_dirs = [repo_dir.resolve()]
+
+        code_task_oauth_token = os.getenv("CELESTE_CODE_TASK_OAUTH_TOKEN") or None
+        code_task_image = (
+            os.getenv("CELESTE_CODE_TASK_IMAGE", "celeste-code-task:latest").strip()
+            or "celeste-code-task:latest"
+        )
+        try:
+            code_task_timeout_seconds = int(
+                os.getenv("CELESTE_CODE_TASK_TIMEOUT_SECONDS", "600")
+            )
+        except ValueError:
+            code_task_timeout_seconds = 600
+        code_task_timeout_seconds = max(30, min(code_task_timeout_seconds, 3600))
+
         return cls(
             api_token=api_token,
             brain_dir=brain_dir,
@@ -158,4 +188,8 @@ class Settings:
             reminder_poll_seconds=reminder_poll_seconds,
             embeddings_enabled=embeddings_enabled,
             embedding_model=embedding_model,
+            code_task_allowed_dirs=code_task_allowed_dirs,
+            code_task_oauth_token=code_task_oauth_token,
+            code_task_image=code_task_image,
+            code_task_timeout_seconds=code_task_timeout_seconds,
         )
