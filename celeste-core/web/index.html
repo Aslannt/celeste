@@ -45,6 +45,10 @@
   }
   canvas#orb { width: min(70vw, 60vh); height: min(70vw, 60vh); }
 
+  #conversationBadge {
+    display: none; position: absolute; top: 10px; left: 0; right: 0; text-align: center;
+    font-size: 11px; letter-spacing: 1px; color: var(--cyan); cursor: pointer;
+  }
   #stateLabel {
     position: absolute; bottom: 14px; left: 0; right: 0; text-align: center;
     font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim);
@@ -129,6 +133,7 @@
   </header>
 
   <div id="stage">
+    <div id="conversationBadge">CONVERSACIÓN CONTINUA · TOCA PARA SALIR</div>
     <canvas id="orb" width="600" height="600"></canvas>
     <div id="stateLabel">Toca el micrófono</div>
   </div>
@@ -191,7 +196,18 @@
     confirmOk: document.getElementById("confirmOk"),
     confirmCancel: document.getElementById("confirmCancel"),
     canvas: document.getElementById("orb"),
+    conversationBadge: document.getElementById("conversationBadge"),
   };
+
+  // Once a turn started by voice finishes, keep listening automatically so
+  // the user can just keep talking, like a real conversation instead of a
+  // press-to-talk walkie-talkie.
+  let voiceConversationMode = false;
+  function setVoiceConversationMode(enabled) {
+    voiceConversationMode = enabled;
+    els.conversationBadge.style.display = enabled ? "block" : "none";
+  }
+  els.conversationBadge.addEventListener("click", () => setVoiceConversationMode(false));
 
   const config = {
     get coreUrl() { return localStorage.getItem("celeste_core_url") || window.location.origin; },
@@ -347,6 +363,7 @@
     recognizer.onresult = (event) => {
       const heard = event.results[0][0].transcript;
       addLine("user", "TÚ", heard);
+      setVoiceConversationMode(true);
       sendToAssistant(heard);
     };
   }
@@ -356,6 +373,7 @@
     const text = els.textInput.value.trim();
     if (!text) return;
     if (!config.token) { openSettings(); return; }
+    setVoiceConversationMode(false);
     addLine("user", "TÚ", text);
     els.textInput.value = "";
     sendToAssistant(text);
@@ -367,6 +385,7 @@
       return;
     }
     if (orbState === "listening") {
+      setVoiceConversationMode(false);
       recognizer.stop();
       return;
     }
@@ -387,11 +406,19 @@
     if (esVoice) utterance.voice = esVoice;
 
     utterance.onstart = () => { setState("speaking", "Celeste responde..."); startSyntheticPulse(); };
-    utterance.onend = () => { stopSyntheticPulse(); setState("idle", "Toca el micrófono"); };
-    utterance.onerror = () => { stopSyntheticPulse(); setState("idle", "Toca el micrófono"); };
+    utterance.onend = () => { stopSyntheticPulse(); setState("idle", "Toca el micrófono"); maybeContinueConversation(); };
+    utterance.onerror = () => { stopSyntheticPulse(); setState("idle", "Toca el micrófono"); maybeContinueConversation(); };
 
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
+  }
+
+  function maybeContinueConversation() {
+    if (!voiceConversationMode || !recognizer || pendingConfirmationId) return;
+    setTimeout(() => {
+      if (!voiceConversationMode || orbState !== "idle") return;
+      try { recognizer.start(); } catch (_) { /* already started */ }
+    }, 600);
   }
 
   // ---------- Celeste API ----------
