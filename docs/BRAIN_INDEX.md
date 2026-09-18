@@ -18,6 +18,8 @@ Se usa SQLite FTS5 para indexar:
 
 Los campos `note_id`, `note_type` y `updated_at` se guardan en la tabla virtual para recuperar y ordenar resultados, pero la respuesta final siempre se vuelve a leer desde el Markdown original.
 
+Como el indice es cache reconstruible (regla dura 2 de `CLAUDE.md`), `.celeste/*.sqlite3*` debe quedar excluido de la sincronizacion del vault (Syncthing u otra herramienta similar) igual que se excluiria cualquier binario derivado: sincronizar un `.sqlite3` a medio escribir entre dos maquinas puede corromper el archivo, y de todas formas se reconstruye solo al arrancar Core.
+
 ## Ciclo de vida
 
 - Al arrancar Celeste Core, el indice se reconstruye desde `CelesteBrain/notes`.
