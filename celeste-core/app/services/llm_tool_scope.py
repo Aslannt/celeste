@@ -103,6 +103,12 @@ _PERSONAL_MEMORY_PATTERNS = (
     re.compile(r"\bmemoria (?:personal|de celeste|del asistente)\b"),
     re.compile(r"\b(?:busca|revisa|consulta|mira)\b.{0,48}\bmemoria\b"),
     re.compile(r"\b(?:que|qué) (?:tienes|hay) (?:en )?(?:tu |mi )?memoria\b"),
+    # Generic "what do you know/have about my X" (pareja, trabajo, perro, ...):
+    # deliberately not enumerating every possible topic word, since asking
+    # what Celeste knows about anything of the user's must check real memory
+    # instead of answering from the "no tools" conversational framing.
+    re.compile(r"\bque (?:sabes|tienes|conoces) (?:de|sobre) mi\b"),
+    re.compile(r"\bque (?:informacion|conocimiento) tienes (?:de|sobre) mi\b"),
 )
 
 # Questions about Celeste's own identity/capabilities must be answered from the
@@ -116,8 +122,6 @@ _CAPABILITY_QUESTION_PATTERNS = (
     re.compile(r"\bque (?:puedes|sabes) hacer\b"),
     re.compile(r"\bque (?:tanto|tan) capaz\b"),
     re.compile(r"\bcuales son tus (?:funciones|capacidades|herramientas)\b"),
-    re.compile(r"\bque (?:conocimiento|informacion) tienes sobre mi\b"),
-    re.compile(r"\bque sabes (?:de|sobre) mi\b"),
 )
 
 _SEARCH_MEMORY_HONESTY_SUFFIX = (

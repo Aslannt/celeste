@@ -45,6 +45,26 @@ def test_capability_questions_expose_tool_catalog(tmp_path, monkeypatch):
         assert {schema["name"] for schema in view.tool_schemas()} == expected_names
 
 
+def test_generic_personal_topic_questions_expose_tool_catalog(tmp_path, monkeypatch):
+    # Regression: "que informacion tienes de mi pareja?" used to fall through
+    # every cue (no "memoria", "nota", etc. word), so Celeste answered from
+    # the no-tools framing without ever checking Brain. The topic word
+    # (pareja, trabajo, perro...) must not need to be enumerated.
+    router = _router(tmp_path, monkeypatch)
+    expected_names = {schema["name"] for schema in router.tool_schemas()}
+
+    messages = [
+        "Que informacion tienes de mi pareja?",
+        "Que sabes de mi trabajo?",
+        "Que tienes sobre mi perro?",
+    ]
+
+    for message in messages:
+        view = scope_router_for_message(router, message)
+        assert message_needs_tool_catalog(message) is True
+        assert {schema["name"] for schema in view.tool_schemas()} == expected_names
+
+
 def test_technical_memory_questions_do_not_expose_personal_tools(tmp_path, monkeypatch):
     router = _router(tmp_path, monkeypatch)
     messages = [
