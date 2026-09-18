@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 NoteType = Literal["note", "task", "memory", "project"]
@@ -23,6 +23,13 @@ class NoteUpdate(BaseModel):
 
 
 class Note(BaseModel):
+    # Other tools (the Obsidian vault's own "segundo cerebro" conventions)
+    # write extra frontmatter fields into these same Markdown files, e.g.
+    # promoted/promoted_to when a note gets curated. Celeste must round-trip
+    # those untouched instead of silently dropping them on the next
+    # update_note/delete_note write - it doesn't need to understand them.
+    model_config = ConfigDict(extra="allow")
+
     id: str
     title: str
     content: str

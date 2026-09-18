@@ -1,9 +1,10 @@
 from pathlib import Path
 
+import yaml
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import NoteCreate
+from app.models import NoteCreate, NoteUpdate
 from app.services.storage import MarkdownNoteStorage
 
 TOKEN = "test-token"
@@ -69,6 +70,35 @@ def test_create_read_update_and_soft_delete_note(tmp_path, monkeypatch):
         all_notes = client.get("/api/v1/notes?include_deleted=true", headers=HEADERS)
         assert len(all_notes.json()) == 1
         assert all_notes.json()[0]["deleted"] is True
+
+
+def test_update_preserves_unknown_frontmatter_fields_from_other_tools(tmp_path, monkeypatch):
+    # The Obsidian vault's own "segundo cerebro" tooling writes extra
+    # frontmatter fields (e.g. promoted/promoted_to) into these same
+    # Markdown files. Celeste must round-trip them untouched instead of
+    # dropping them the next time it rewrites the note via update/delete.
+    brain = _configure(tmp_path, monkeypatch)
+    storage = MarkdownNoteStorage(brain)
+    note = storage.create(NoteCreate(title="Nota curada", content="Contenido original."))
+
+    path = storage._find_path(note.id)
+    text = path.read_text(encoding="utf-8")
+    _, frontmatter, body = text.split("---", 2)
+    metadata = yaml.safe_load(frontmatter)
+    metadata["promoted"] = True
+    metadata["promoted_to"] = "areas/moto.md"
+    new_frontmatter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False, default_flow_style=False).strip()
+    path.write_text(f"---\n{new_frontmatter}\n---{body}", encoding="utf-8")
+
+    updated = storage.update(note.id, NoteUpdate(content="Contenido editado por Celeste."))
+
+    assert updated.promoted is True
+    assert updated.promoted_to == "areas/moto.md"
+
+    persisted_text = storage._find_path(note.id).read_text(encoding="utf-8")
+    persisted_metadata = yaml.safe_load(persisted_text.split("---", 2)[1])
+    assert persisted_metadata["promoted"] is True
+    assert persisted_metadata["promoted_to"] == "areas/moto.md"
 
 
 def test_create_note_is_idempotent_for_same_key_and_payload(tmp_path, monkeypatch):
