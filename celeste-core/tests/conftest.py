@@ -15,3 +15,11 @@ def _disable_embeddings_by_default(monkeypatch):
     simply overrides this default.
     """
     monkeypatch.setenv("CELESTE_EMBEDDINGS_ENABLED", "false")
+
+
+@pytest.fixture(autouse=True)
+def _disable_web_search_by_default(monkeypatch):
+    """Same override=False leak as embeddings above, now that the real .env
+    has CELESTE_WEB_SEARCH_ENABLED=true. Tests that want it on set the env
+    var themselves."""
+    monkeypatch.setenv("CELESTE_WEB_SEARCH_ENABLED", "false")

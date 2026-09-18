@@ -1,0 +1,11 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: celeste-searxng
+    ports:
+      - "127.0.0.1:8890:8080"
+    volumes:
+      - ./config:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL=http://127.0.0.1:8890/
+    restart: unless-stopped

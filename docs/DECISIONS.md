@@ -74,3 +74,22 @@ Decision: en vez de buscar una forma de sortear ese bloqueo, se aplico el mismo 
 Ademas, aprovechando la investigacion: la propia documentacion de Claude Code recomienda `--allow-dangerously-skip-permissions` solo para sandboxes *sin* acceso a red. El contenedor de `code_task` si tiene red (necesaria para instalar dependencias reales), asi que el script generado usa `--allowedTools` acotado (edicion de archivos + comandos especificos del proyecto) en vez de un bypass total, para no dejar una via de exfiltracion del propio token si un agente mal dirigido decidiera usarla.
 
 Ver [docs/CODE_TASK.md](CODE_TASK.md) para el flujo completo y el setup.
+
+## ADR-012: `web_search` via SearXNG autoalojado, no una API de pago
+
+Decidido 2026-09-18. El usuario pidio que Celeste pudiera buscar informacion real en internet (noticias, precios, hechos posteriores al entrenamiento del modelo local), manteniendo la regla de costo 0 del proyecto.
+
+Opciones evaluadas: (a) una API de busqueda de pago (Brave Search, SerpAPI, etc.) - simple de integrar pero con cuota gratuita limitada y luego cobra; (b) scraping directo de un buscador - fragil y contrario a la decision ya tomada en el ROADMAP de no depender de scraping/automatizacion de navegador; (c) SearXNG autoalojado en Docker - motor de metabusqueda open source, gratis, sin llave ni limite de requests, corriendo en la propia maquina del usuario.
+
+Se eligio (c). Detalles:
+
+- Contenedor en `celeste-core/docker/searxng/` (`docker compose up -d`), puerto local `127.0.0.1:8890` para no chocar con otros servicios ya usando 8080 en este equipo. El `settings.yml` generado por SearXNG en el primer arranque se edita a mano para habilitar `search.formats: [html, json]` (viene deshabilitado por defecto en instancias publicas por abuso); como es una instancia local de un solo usuario, habilitarlo es seguro. Ese `settings.yml` generado no se versiona (tiene un `secret_key` de instancia); solo el `docker-compose.yml` se comitea.
+- Nueva herramienta `web_search` (`READ`) en el Tool Router, deshabilitada por defecto (`CELESTE_WEB_SEARCH_ENABLED=false`), mismo patron opt-in que Gmail/Calendar/embeddings.
+- Resultados marcados como contenido no confiable (regla dura 3 de `CLAUDE.md`), igual que Gmail/Calendar: se anota `_celeste_context` en la ejecucion y la descripcion de la herramienta pide citar la fuente y no seguir instrucciones encontradas en el contenido devuelto.
+
+Encontrado en el camino (dos bugs reales, no solo la funcionalidad nueva):
+
+1. `llm_tool_scope.py` decide por palabras clave si le muestra el catalogo de herramientas al modelo local, para ahorrar tokens/latencia. Preguntas de identidad como "quien eres y de que eres capaz?" no calzaban con ninguna palabra clave, asi que caian en `_CELESTE_CONVERSATION_INSTRUCTIONS`, que le dice al modelo *"no tools are available"* - y el modelo, tomandolo literal, le decia al usuario que no tenia memoria ni herramientas, lo cual es falso. Fix: preguntas de identidad/capacidad ahora tambien activan el catalogo real (`_CAPABILITY_QUESTION_PATTERNS`).
+2. `fast_paths.py` tiene un atajo determinista (sin pasar por el LLM) para mensajes que empiezan con "busca"/"buscar", pensado desde antes de que existiera `web_search`: mandaba cualquier "busca X" a `search_memory`, incluso "busca **en internet** X". Fix: si el mensaje menciona explicitamente internet/web/noticias, el atajo se abstiene y deja que el LLM decida, para que pueda elegir `web_search` en vez de devolver notas de Brain sin relacion.
+
+Ver `docker/searxng/docker-compose.yml` para el setup del contenedor.

@@ -122,6 +122,10 @@ Google Calendar (contenido marcado como no confiable):
 - `calendar_update_event` - CONFIRM
 - `calendar_delete_event` - CONFIRM
 
+Internet:
+
+- `web_search` - READ (busca en un SearXNG autoalojado, ver [ADR-012](DECISIONS.md); contenido no confiable, deshabilitado por defecto con `CELESTE_WEB_SEARCH_ENABLED`)
+
 `wake_pc` se mantiene fuera del router por ahora: Celeste Core sigue ejecutandose en el mismo PC que se quiere despertar. Tendra sentido cuando exista un Core 24/7 en otro equipo o cuando el cliente Android pueda ejecutar una accion local confirmada.
 
 ## Conectores futuros

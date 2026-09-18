@@ -173,6 +173,8 @@
 - [ ] Vista diaria combinando agenda, recordatorios, inbox y Brain
 - [x] Memoria de conversacion de corto plazo entre turnos (ConversationHistory, efimera, reset a los 30 min de inactividad o al reiniciar Core) - primer paso real hacia "hablar como con un amigo"
 - [x] Conciencia real del PC: CPU/RAM/disco reales via psutil en `get_pc_status`, no solo "esta online"
+- [x] `web_search` via SearXNG autoalojado (ADR-012): Celeste puede buscar en internet informacion real/actual, gratis y sin limite de consultas, en vez de responder solo con el conocimiento congelado del modelo local
+- [x] Chat por terminal (`celeste-core/chat_windows.ps1`) + acceso directo de escritorio, para hablar con Celeste sin pasar por Swagger
 - [ ] Rutinas de manana/noche configurables (el resumen matutino de V0.5.1 es el primer paso; falta version de noche y hacerlo configurable)
 - [ ] Notificaciones Android fiables en background (recordatorios ya disparan alarma real del sistema vía `ReminderAlarms`/`AlarmManager`, 2026-09-16; falta persistir tras reinicio del telefono y cubrir Gmail/Calendar del mismo modo; falta validar en telefono real)
 - [ ] Persistencia de confirmaciones importantes ante reinicios donde sea seguro

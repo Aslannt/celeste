@@ -30,3 +30,7 @@ Thumbs.db
 
 **/calendar-credentials.json
 **/calendar-token.json
+
+# SearXNG generates a per-instance secret_key and other local state here on
+# first run; only docker-compose.yml (the recipe) is versioned.
+celeste-core/docker/searxng/config/

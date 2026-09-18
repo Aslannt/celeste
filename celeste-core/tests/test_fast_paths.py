@@ -157,6 +157,23 @@ def test_search_fast_path_refuses_mutating_request(tmp_path, monkeypatch):
     assert result is None
 
 
+def test_search_fast_path_defers_to_llm_for_internet_requests(tmp_path, monkeypatch):
+    # "Busca ..." used to always mean Brain search. Now that web_search exists,
+    # an explicit internet request must fall through to the LLM instead of
+    # being hijacked into a Brain-only search_memory call.
+    _configure(tmp_path, monkeypatch)
+    settings = Settings.from_env()
+    router = ToolRouter(settings)
+
+    result = try_ollama_fast_path(
+        "Busca en internet quien gano el ultimo mundial de formula 1.",
+        router,
+        settings,
+    )
+
+    assert result is None
+
+
 def test_natural_recall_fast_path_refuses_mutating_request(tmp_path, monkeypatch):
     _configure(tmp_path, monkeypatch)
     settings = Settings.from_env()

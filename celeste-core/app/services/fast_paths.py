@@ -51,6 +51,15 @@ _SEARCH_PATTERNS = [
     re.compile(r"^no te habia dicho que (.+?) revisa si recuerdas algo$"),
 ]
 
+_WEB_SEARCH_WORDS = (
+    " internet",
+    " en la web",
+    " en linea",
+    " google",
+    " noticia",
+    " noticias",
+)
+
 _MUTATION_WORDS = (
     " elimina",
     " eliminar",
@@ -150,6 +159,12 @@ def _search_query(message: str) -> str | None:
     text = _intent_text(message)
     padded = f" {text} "
     if any(word in padded for word in _MUTATION_WORDS):
+        return None
+    # "Busca ..." used to always mean Brain search, before web_search existed.
+    # A message that explicitly asks for the internet must go through the LLM
+    # so it can call web_search instead of silently searching only the user's
+    # own notes.
+    if any(word in padded for word in _WEB_SEARCH_WORDS):
         return None
 
     for pattern in _SEARCH_PATTERNS:

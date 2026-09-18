@@ -16,15 +16,33 @@ def _router(tmp_path: Path, monkeypatch) -> ToolRouter:
     return ToolRouter(Settings.from_env())
 
 
-def test_clear_conversation_omits_tool_schemas(tmp_path, monkeypatch):
+def test_small_talk_omits_tool_schemas(tmp_path, monkeypatch):
     router = _router(tmp_path, monkeypatch)
-    view = scope_router_for_message(
-        router,
-        "Explicame en una sola frase que puedes hacer por mi.",
-    )
+    view = scope_router_for_message(router, "Hola, como estas?")
 
-    assert message_needs_tool_catalog("Explicame en una sola frase que puedes hacer por mi.") is False
+    assert message_needs_tool_catalog("Hola, como estas?") is False
     assert view.tool_schemas() == []
+
+
+def test_capability_questions_expose_tool_catalog(tmp_path, monkeypatch):
+    # Regression: these used to be scoped OUT, so the model answered from
+    # _CELESTE_CONVERSATION_INSTRUCTIONS's "no tools available" framing and
+    # told the user it has no memory/tools at all - which is false. Asking
+    # what Celeste can do must see the real catalog instead of denying it.
+    router = _router(tmp_path, monkeypatch)
+    expected_names = {schema["name"] for schema in router.tool_schemas()}
+
+    messages = [
+        "Explicame en una sola frase que puedes hacer por mi.",
+        "Quiero saber quien eres y de que eres capaz.",
+        "Que conocimiento tienes sobre mi?",
+        "Cuales son tus funciones?",
+    ]
+
+    for message in messages:
+        view = scope_router_for_message(router, message)
+        assert message_needs_tool_catalog(message) is True
+        assert {schema["name"] for schema in view.tool_schemas()} == expected_names
 
 
 def test_technical_memory_questions_do_not_expose_personal_tools(tmp_path, monkeypatch):
@@ -110,6 +128,17 @@ def test_schema_view_still_delegates_real_tool_execution(tmp_path, monkeypatch):
 
     assert event.tool == "get_pc_status"
     assert event.status == "executed"
+
+
+def test_web_search_cues_keep_tool_catalog_enabled():
+    messages = [
+        "Busca en internet cual es el clima hoy en Bogota.",
+        "Que dicen las noticias sobre esto?",
+        "Cual es la cotizacion del dolar ahorita?",
+    ]
+
+    for message in messages:
+        assert message_needs_tool_catalog(message) is True
 
 
 def test_gmail_cues_keep_tool_catalog_enabled():

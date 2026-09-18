@@ -36,6 +36,8 @@ class Settings:
     reminder_poll_seconds: int
     embeddings_enabled: bool
     embedding_model: str
+    web_search_enabled: bool
+    searxng_url: str
     code_task_allowed_dirs: list[Path]
     code_task_oauth_token: str | None
     code_task_image: str
@@ -141,6 +143,12 @@ class Settings:
             os.getenv("CELESTE_EMBEDDING_MODEL", "bge-m3").strip() or "bge-m3"
         )
 
+        web_search_enabled = _env_bool("CELESTE_WEB_SEARCH_ENABLED", False)
+        searxng_url = (
+            os.getenv("CELESTE_SEARXNG_URL", "http://127.0.0.1:8890").strip()
+            or "http://127.0.0.1:8890"
+        )
+
         raw_allowed_dirs = os.getenv("CELESTE_CODE_TASK_ALLOWED_DIRS", "").strip()
         if raw_allowed_dirs:
             code_task_allowed_dirs = [
@@ -188,6 +196,8 @@ class Settings:
             reminder_poll_seconds=reminder_poll_seconds,
             embeddings_enabled=embeddings_enabled,
             embedding_model=embedding_model,
+            web_search_enabled=web_search_enabled,
+            searxng_url=searxng_url,
             code_task_allowed_dirs=code_task_allowed_dirs,
             code_task_oauth_token=code_task_oauth_token,
             code_task_image=code_task_image,
