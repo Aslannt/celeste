@@ -861,14 +861,23 @@ class ClaudeCLIProvider:
         self.timeout_seconds = timeout_seconds
         self.binary = binary or shutil.which("claude") or "claude"
 
-    def answer(self, message: str, router: ToolRouter) -> AssistantResult:
+    def answer(
+        self,
+        message: str,
+        router: ToolRouter,
+        history: list[dict[str, str]] | None = None,
+    ) -> AssistantResult:
         if not message.strip():
             raise AIProviderError("El mensaje no puede estar vacio.")
 
         started = time.perf_counter()
         schemas = router.tool_schemas()
         system = self._system_prompt(schemas)
-        transcript = [f"USER: {message.strip()}"]
+        transcript = [
+            f"{'ASSISTANT' if item.get('role') == 'assistant' else 'USER'}: {item.get('content', '')}"
+            for item in (history or [])
+        ]
+        transcript.append(f"USER: {message.strip()}")
         events: list[ToolExecution] = []
         rounds: list[dict[str, Any]] = []
         tool_timings: list[dict[str, Any]] = []

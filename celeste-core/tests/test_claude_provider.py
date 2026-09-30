@@ -140,3 +140,41 @@ def test_claude_provider_reports_missing_binary(tmp_path, monkeypatch):
 
     with pytest.raises(AIProviderError, match="CELESTE_CLAUDE_BIN"):
         build_provider(settings).answer("hola", ToolRouter(settings))
+
+
+def test_claude_provider_includes_conversation_history(tmp_path, monkeypatch):
+    settings = _configure(tmp_path, monkeypatch)
+    fake = FakeCLI(["Se llama Verónica."])
+    monkeypatch.setattr(subprocess, "run", fake)
+
+    build_provider(settings).answer(
+        "¿cómo se llama?",
+        ToolRouter(settings),
+        history=[
+            {"role": "user", "content": "mi pareja está embarazada"},
+            {"role": "assistant", "content": "¡Felicitaciones!"},
+        ],
+    )
+
+    assert fake.calls[0]["input"] == (
+        "USER: mi pareja está embarazada\n\nASSISTANT: ¡Felicitaciones!\n\nUSER: ¿cómo se llama?"
+    )
+
+
+def test_chat_endpoint_works_with_claude_provider(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    _configure(tmp_path, monkeypatch)
+    monkeypatch.setattr(subprocess, "run", FakeCLI(["Canberra."]))
+
+    response = TestClient(app).post(
+        "/api/v1/assistant/chat",
+        headers={"X-Celeste-Token": TOKEN},
+        json={"message": "¿capital de Australia?"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reply"] == "Canberra."
+    assert response.json()["provider"] == "claude"
