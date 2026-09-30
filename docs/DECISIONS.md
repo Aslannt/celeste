@@ -93,3 +93,15 @@ Encontrado en el camino (dos bugs reales, no solo la funcionalidad nueva):
 2. `fast_paths.py` tiene un atajo determinista (sin pasar por el LLM) para mensajes que empiezan con "busca"/"buscar", pensado desde antes de que existiera `web_search`: mandaba cualquier "busca X" a `search_memory`, incluso "busca **en internet** X". Fix: si el mensaje menciona explicitamente internet/web/noticias, el atajo se abstiene y deja que el LLM decida, para que pueda elegir `web_search` en vez de devolver notas de Brain sin relacion.
 
 Ver `docker/searxng/docker-compose.yml` para el setup del contenedor.
+
+## ADR-013: Claude via el plan del usuario como proveedor principal, Ollama como respaldo
+
+Con Ollama (`qwen3.5:4b`/`9b`) Celeste respondia lento y elegia mal las herramientas; en la practica no se usaba. Se agrega `CELESTE_LLM_PROVIDER=claude` (2026-09-30): un `ClaudeCLIProvider` que llama al CLI local de Claude Code (`claude -p`), autenticado con la suscripcion Pro del usuario. No suma costo: consume de los limites de uso del plan, nunca de una API key (el proveedor elimina `ANTHROPIC_API_KEY` del entorno del subproceso para que no pueda facturar por la API).
+
+Para gastar lo minimo del plan, cada ronda es una llamada sin estado con: modelo `haiku` por defecto, system prompt propio (reemplaza el de Claude Code), sin herramientas nativas (`--tools ""`), sin MCP, sin skills, sin settings de usuario, sin pensamiento extendido (`MAX_THINKING_TOKENS=0`) y con `cwd` en el temp para que no cargue ningun `CLAUDE.md`. Medido: ~2.4k tokens de entrada por ronda, 30-90 de salida, ~3.5 s por ronda. Los fast paths y el recorte de herramientas por mensaje, que antes solo corrian con Ollama, ahora tambien corren con Claude.
+
+ADR-005 se mantiene: el modelo no tiene herramientas nativas. Pide herramientas con un protocolo de texto (`<tool>{"name", "arguments"}</tool>`), el Core ejecuta solo el primer bloque a traves del Tool Router (READ/SAFE_WRITE/CONFIRM) y le devuelve el resultado marcado como dato, no instruccion.
+
+Trade-off aceptado: Celeste deja de ser 100% local en el razonamiento (el texto del mensaje y el contexto recortado van a Anthropic). Los datos siguen en Markdown local. Ollama queda como respaldo offline cambiando una variable.
+
+Relacion con ADR-011: alli el clasificador de Claude Code bloqueo que Celeste lanzara un agente de codigo autonomo con permisos. Esto es distinto: `claude -p --tools ""` no es un agente, no tiene ninguna herramienta ni permiso, solo devuelve texto. Toda accion sigue pasando por el Tool Router.

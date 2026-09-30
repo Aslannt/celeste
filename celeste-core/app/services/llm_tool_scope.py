@@ -266,6 +266,10 @@ class ToolSchemaView:
             summary=execution.summary,
         )
 
+    def with_all_tools(self) -> "ToolSchemaView":
+        """Same router with the full catalog, for when the keyword scope missed."""
+        return ToolSchemaView(self._router, expose_tools=True)
+
     def __getattr__(self, name: str):
         return getattr(self._router, name)
 

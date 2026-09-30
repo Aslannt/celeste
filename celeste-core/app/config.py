@@ -24,6 +24,7 @@ class Settings:
     openai_api_key: str | None
     ollama_url: str
     ollama_think: bool
+    claude_bin: str | None
     gmail_enabled: bool
     gmail_credentials_file: Path
     gmail_token_file: Path
@@ -58,7 +59,7 @@ class Settings:
         api_token = os.getenv("CELESTE_API_TOKEN", "celeste-local-dev")
         llm_provider = os.getenv("CELESTE_LLM_PROVIDER", "local_rules").strip().lower()
 
-        default_model = "qwen3.5:9b" if llm_provider == "ollama" else "gpt-5.6"
+        default_model = {"ollama": "qwen3.5:9b", "claude": "haiku"}.get(llm_provider, "gpt-5.6")
         llm_model = os.getenv("CELESTE_LLM_MODEL", default_model).strip() or default_model
 
         try:
@@ -184,6 +185,7 @@ class Settings:
             openai_api_key=openai_api_key,
             ollama_url=ollama_url,
             ollama_think=ollama_think,
+            claude_bin=os.getenv("CELESTE_CLAUDE_BIN", "").strip() or None,
             gmail_enabled=gmail_enabled,
             gmail_credentials_file=gmail_credentials_file,
             gmail_token_file=gmail_token_file,

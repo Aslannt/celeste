@@ -84,7 +84,7 @@ def assistant_chat(payload: AssistantChatRequest) -> AssistantChatResponse:
 
     provider_router = (
         scope_router_for_message(router_service, payload.message)
-        if settings.llm_provider == "ollama"
+        if settings.llm_provider in {"ollama", "claude"}
         else router_service
     )
 
