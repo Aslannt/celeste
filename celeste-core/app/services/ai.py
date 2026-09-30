@@ -821,6 +821,14 @@ Available tools (JSON schema):
 
 _CLAUDE_TOOL_BLOCK = re.compile(r"<tool>\s*(\{.*?\})\s*</tool>", re.DOTALL)
 
+_CLAUDE_NEED_TOOLS = "<need_tools/>"
+_CLAUDE_NEED_TOOLS_RULE = (
+    "Celeste Core does have tools (notes, memory, reminders, calendar, email, web search, PC status), "
+    "they are just hidden in this turn to save tokens. If answering well needs any of them "
+    "(saving or remembering something, scheduling or reminding, checking the user's notes, agenda, "
+    f"email, current news), reply with exactly {_CLAUDE_NEED_TOOLS} and nothing else.\n"
+)
+
 _CLAUDE_VOICE_STYLE = (
     "Your replies may be read aloud: plain text, no markdown, no lists, "
     "one to three short sentences unless the user asks for detail. "
@@ -901,6 +909,16 @@ class ClaudeCLIProvider:
                 }
             )
             content = str(payload.get("result") or "").strip()
+
+            # The keyword scope hid the tools but the model says it needs them:
+            # retry once with the full catalog instead of answering "no puedo".
+            expand = getattr(router, "with_all_tools", None)
+            if not schemas and _CLAUDE_NEED_TOOLS in content and callable(expand):
+                router = expand()
+                schemas = router.tool_schemas()
+                system = self._system_prompt(schemas)
+                continue
+
             match = _CLAUDE_TOOL_BLOCK.search(content) if schemas else None
 
             if match is None:
@@ -960,6 +978,7 @@ class ClaudeCLIProvider:
         if not schemas:
             return (
                 f"{_CELESTE_CONVERSATION_INSTRUCTIONS}{_CLAUDE_VOICE_STYLE}"
+                f"{_CLAUDE_NEED_TOOLS_RULE}"
                 f"Current local time: {now}."
             )
         compact = json.dumps(

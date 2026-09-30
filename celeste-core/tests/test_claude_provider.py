@@ -178,3 +178,30 @@ def test_chat_endpoint_works_with_claude_provider(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.json()["reply"] == "Canberra."
     assert response.json()["provider"] == "claude"
+
+
+def test_claude_provider_expands_tools_when_scope_missed(tmp_path, monkeypatch):
+    from app.services.llm_tool_scope import scope_router_for_message
+
+    settings = _configure(tmp_path, monkeypatch)
+    message = "apunta que el lunes pago el arriendo"  # sin palabras clave del scope
+    scoped = scope_router_for_message(ToolRouter(settings), message)
+    assert scoped.tool_schemas() == []
+    fake = FakeCLI(
+        [
+            "<need_tools/>",
+            '<tool>{"name": "create_note", "arguments": {"title": "Arriendo", '
+            '"content": "Pagar el arriendo el lunes", "type": "task"}}</tool>',
+            "Anotado.",
+        ]
+    )
+    monkeypatch.setattr(subprocess, "run", fake)
+
+    result = build_provider(settings).answer(message, scoped)
+
+    assert result.reply == "Anotado."
+    assert [event.tool for event in result.events] == ["create_note"]
+    first_system = fake.calls[0]["command"][fake.calls[0]["command"].index("--system-prompt") + 1]
+    second_system = fake.calls[1]["command"][fake.calls[1]["command"].index("--system-prompt") + 1]
+    assert "<need_tools/>" in first_system and "create_note" not in first_system
+    assert "create_note" in second_system
