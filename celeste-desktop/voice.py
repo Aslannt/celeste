@@ -42,7 +42,7 @@ def find_input_device(name_hint: str | None) -> int | None:
 class Recorder:
     """Graba hasta que el usuario calla (~1 s de silencio) o vuelve a hacer clic."""
 
-    def __init__(self, device: int | None, on_level, silence_s: float = 1.0, max_s: float = 25.0, no_speech_s: float = 6.0):
+    def __init__(self, device: int | None, on_level, silence_s: float = 1.6, max_s: float = 25.0, no_speech_s: float = 6.0):
         self.device = device
         self.on_level = on_level
         self.silence_s = silence_s
@@ -63,7 +63,7 @@ class Recorder:
         def callback(indata, _frames, _time, _status):
             q.put(indata[:, 0].copy())
 
-        noise: list[float] = []
+        history: list[float] = []
         peak = 0.0
         speech_started = False
         last_voice = started = time.monotonic()
@@ -76,11 +76,14 @@ class Recorder:
                     continue
                 chunks.append(block)
                 peak = max(peak, float(np.abs(block).max()))
-                rms = float(np.sqrt(np.mean(block * block)) + 1e-9)
+                history.append(float(np.sqrt(np.mean(block * block)) + 1e-9))
                 now = time.monotonic()
-                if len(noise) < 10:  # primeros 300 ms: piso de ruido
-                    noise.append(rms)
-                threshold = max(0.012, (sum(noise) / len(noise)) * 3.0)
+                # Piso de ruido = los bloques más callados vistos hasta ahora (las pausas entre
+                # palabras), no los primeros 300 ms: si hablas apenas haces clic, tu voz no
+                # termina contada como "ruido" y el corte ya no se adelanta.
+                floor = float(np.percentile(history, 10))
+                threshold = max(0.004, floor * 3.0)
+                rms = float(np.mean(history[-3:]))  # ~90 ms suavizados: no corta entre sílabas
                 self.on_level(min(1.0, rms / (threshold * 4)))
                 if rms > threshold:
                     speech_started = True
@@ -137,6 +140,9 @@ class TextToSpeech:
     def speak(self, text: str) -> None:
         """Reproduce sin bloquear; `level()` da la amplitud actual para animar el orbe."""
         audio = np.concatenate([c.audio_float_array for c in self.voice.synthesize(text)])
+        # 300 ms de silencio al inicio: los audífonos USB/Bluetooth tardan en "despertar"
+        # y sin esto se comen la primera palabra.
+        audio = np.concatenate([np.zeros(int(self.rate * 0.3), dtype=audio.dtype), audio])
         frame = int(self.rate * 0.03)
         pad = (-len(audio)) % frame
         env = np.sqrt(np.mean(np.pad(audio, (0, pad)).reshape(-1, frame) ** 2, axis=1))

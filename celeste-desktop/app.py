@@ -81,7 +81,7 @@ class CelesteWidget(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedSize(300, 330)
+        self.setFixedSize(320, 520)  # alto de sobra para respuestas largas; lo transparente no estorba
 
         self.orb = Orb(self)
         self.orb.setFixedSize(220, 220)
@@ -98,7 +98,7 @@ class CelesteWidget(QWidget):
         layout.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.label, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         layout.addStretch()
-        self.label.setMaximumWidth(290)
+        self.label.setMaximumWidth(310)
 
         self.bus.state.connect(self._set_state)
         self.bus.caption.connect(self._show_caption)
@@ -152,9 +152,11 @@ class CelesteWidget(QWidget):
     def _show_caption(self, text: str) -> None:
         self.label.setText(text)
         # Con word-wrap, adjustSize() encoge la etiqueta y corta el texto: fijar ancho real.
-        width = min(290, self.label.fontMetrics().horizontalAdvance(text) + 30)
-        self.label.setFixedWidth(max(width, 80))
-        self.label.adjustSize()
+        width = min(310, self.label.fontMetrics().horizontalAdvance(text) + 30)
+        width = max(width, 80)
+        self.label.setFixedWidth(width)
+        # Alto exacto para el texto envuelto (con word-wrap Qt lo subestima y corta la última línea).
+        self.label.setFixedHeight(self.label.heightForWidth(width) + 4)
         self.label.show()
         self.hide_caption.start(9000 if self.state in ("idle", "error") else 60000)
 
