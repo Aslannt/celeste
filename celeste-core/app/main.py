@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assistant import router as assistant_router
+from app.api.voice import router as voice_router
 from app.api.code_task import router as code_task_router
 from app.api.integrations import router as integrations_router
 from app.api.notes import router as notes_router
@@ -79,6 +80,16 @@ async def _vault_index_loop(settings: Settings) -> None:
         await asyncio.sleep(600)
 
 
+def _warm_voice(settings: Settings) -> None:
+    try:
+        from app.services.voice import get_engine
+
+        get_engine(settings)
+        print("[Celeste] Voz lista (Whisper + Piper).")
+    except Exception as exc:  # noqa: BLE001 - voice is optional
+        print(f"[Celeste] WARNING: voz no disponible: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = Settings.from_env()
@@ -133,6 +144,9 @@ async def lifespan(_: FastAPI):
             print("[Celeste] Calendar needs local OAuth authorization before calendar tools can run.")
 
     reminder_monitor_task = asyncio.create_task(_reminder_monitor_loop(settings))
+    if settings.voice_enabled:
+        # Warm Whisper + Piper now so the first spoken question isn't 30 s slower.
+        asyncio.get_running_loop().run_in_executor(None, _warm_voice, settings)
     if settings.vault_dir is not None:
         vault_index_task = asyncio.create_task(_vault_index_loop(settings))
         print(f"[Celeste] Vault (solo lectura): {settings.vault_dir}")
@@ -161,6 +175,7 @@ app = FastAPI(
 app.include_router(status_router)
 app.include_router(notes_router)
 app.include_router(assistant_router)
+app.include_router(voice_router)
 app.include_router(integrations_router)
 app.include_router(notifications_router)
 app.include_router(reminders_router)

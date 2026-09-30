@@ -205,3 +205,23 @@ def test_claude_provider_expands_tools_when_scope_missed(tmp_path, monkeypatch):
     second_system = fake.calls[1]["command"][fake.calls[1]["command"].index("--system-prompt") + 1]
     assert "<need_tools/>" in first_system and "create_note" not in first_system
     assert "create_note" in second_system
+
+
+def test_claude_provider_prefetches_vault_for_personal_questions(tmp_path, monkeypatch):
+    from app.services.llm_tool_scope import scope_router_for_message
+
+    vault = tmp_path / "Vault"
+    (vault / "Gimnasio").mkdir(parents=True)
+    (vault / "Gimnasio" / "Rutina.md").write_text("# Rutina\n\n## Upper\n\nPress inclinado 3x10.\n", encoding="utf-8")
+    monkeypatch.setenv("CELESTE_VAULT_DIR", str(vault))
+    settings = _configure(tmp_path, monkeypatch)
+    fake = FakeCLI(["Te toca press inclinado."])
+    monkeypatch.setattr(subprocess, "run", fake)
+    message = "¿qué me toca en el día upper de mi rutina?"
+
+    result = build_provider(settings).answer(message, scope_router_for_message(ToolRouter(settings), message))
+
+    assert len(fake.calls) == 1  # una sola ronda de Claude
+    assert [e.tool for e in result.events] == ["search_vault"]
+    assert "Press inclinado" in fake.calls[0]["input"]
+    assert result.performance["tools"][0]["source"] == "prefetch"

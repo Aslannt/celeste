@@ -204,11 +204,31 @@ def _scheduling_context(router: ToolRouter) -> str:
     )
 
 
+# Questions about the user himself ("que me toca hoy en el gym", "cuando nace el
+# bebe") need search_vault. Exposing tools up front saves a whole model round
+# (~4 s by voice) compared to the <need_tools/> escape hatch.
+_PERSONAL_WORD_RE = re.compile(
+    r"\b(?:mi|mis|me|tengo|tenia|toca|tocan|hice|hago|debo|veronica|bebe|embarazo|parto|"
+    r"gym|gimnasio|rutina|moto|r15|carro|civic|apartamento|apto|novatec|bbva|globant|cirion|"
+    r"apx|mulesoft|celeste|katerin|salario|sueldo|cuota|deuda|cita|medico)\b"
+)
+
+
+def message_is_personal(message: str) -> bool:
+    """True when the message is about the user himself (his notes should answer it)."""
+    text = _plain(message)
+    return bool(_PERSONAL_WORD_RE.search(text)) or any(
+        pattern.search(text) for pattern in _PERSONAL_MEMORY_PATTERNS
+    )
+
+
 def message_needs_tool_catalog(message: str) -> bool:
     text = _plain(message)
     if any(pattern.search(text) for pattern in _PERSONAL_MEMORY_PATTERNS):
         return True
     if any(pattern.search(text) for pattern in _CAPABILITY_QUESTION_PATTERNS):
+        return True
+    if _PERSONAL_WORD_RE.search(text):
         return True
     return any(cue in text for cue in _TOOL_CUES)
 

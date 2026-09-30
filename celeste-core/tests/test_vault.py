@@ -132,3 +132,12 @@ def test_vault_index_semantic_layer_is_optional(tmp_path):
     assert index.sync_embeddings() == 0
     # Secciones cortas se fusionan con la anterior: "Frenos" vive dentro del bloque de "Aceite".
     assert "pastillas" in index.search("frenos")[0]["text"]
+
+
+def test_personal_questions_expose_tools_up_front():
+    from app.services.llm_tool_scope import message_needs_tool_catalog
+
+    assert message_needs_tool_catalog("¿Cuándo nace el bebé?")
+    assert message_needs_tool_catalog("¿Qué ejercicios me tocan hoy?")
+    assert not message_needs_tool_catalog("cuéntame un chiste")
+    assert not message_needs_tool_catalog("mientras tanto, hola")

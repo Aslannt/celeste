@@ -25,6 +25,14 @@ dev = [
     "pytest>=8,<10",
     "httpx>=0.27,<1.0",
 ]
+# Voz local para Android (ADR-014): Whisper + Piper en este PC.
+voice = [
+    "numpy>=1.26",
+    "faster-whisper>=1.1",
+    "piper-tts>=1.3",
+    "nvidia-cublas-cu12; platform_system == 'Windows'",
+    "nvidia-cudnn-cu12; platform_system == 'Windows'",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
