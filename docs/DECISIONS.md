@@ -105,3 +105,13 @@ ADR-005 se mantiene: el modelo no tiene herramientas nativas. Pide herramientas 
 Trade-off aceptado: Celeste deja de ser 100% local en el razonamiento (el texto del mensaje y el contexto recortado van a Anthropic). Los datos siguen en Markdown local. Ollama queda como respaldo offline cambiando una variable.
 
 Relacion con ADR-011: alli el clasificador de Claude Code bloqueo que Celeste lanzara un agente de codigo autonomo con permisos. Esto es distinto: `claude -p --tools ""` no es un agente, no tiene ninguna herramienta ni permiso, solo devuelve texto. Toda accion sigue pasando por el Tool Router.
+
+## ADR-014: Celeste lee todo el vault (solo lectura) y habla por el PC con el celular
+
+Decidido 2026-09-30 por el usuario, que pidio explicitamente "todo, absolutamente todo" el vault. Reemplaza el alcance restringido de ADR-008, que dejaba a Celeste ver solo `CelesteBrain/` hasta evaluar la decision.
+
+- **Lectura, no escritura.** `search_vault` es READ. Celeste sigue escribiendo solo en `CelesteBrain/` (ADR-008 en esa parte se mantiene), asi que las notas curadas 00->07 del usuario nunca las toca. El indice vive en `CelesteBrain/.celeste/vault-index.sqlite3`, reconstruible (ADR-002).
+- **Alcance.** Todo el vault salvo carpetas ocultas (`.obsidian`, `.trash`) y el propio `CelesteBrain/` (ya indexado aparte). `CELESTE_VAULT_EXCLUDE` permite excluir carpetas sin tocar codigo. El usuario sabe que `Documentos Personales/` y `Embarazo/Documentos/` tienen numeros de documento sin redactar y que Celeste los puede leer en voz alta y enviarlos como contexto a Claude.
+- **Recuperacion.** Notas partidas por encabezados (el modelo recibe la seccion, no el archivo), FTS5 + `bge-m3` con RRF como `search_memory` (ADR-010), notas curadas antes que material crudo (`Conversaciones raw/`, `copilot/`). Refresco incremental por mtime; embeddings en segundo plano.
+- **Orden de respuesta.** Vault primero, `web_search` despues, y siempre decir la fuente. Para preguntas personales el Core busca en el vault antes de llamar al modelo: una ronda de Claude en vez de dos o tres.
+- **Voz del celular en el PC.** `POST /api/v1/assistant/voice` recibe WAV, transcribe con Whisper en la GPU local, pasa por el mismo pipeline que `/chat` y devuelve la respuesta hablada con Piper. El telefono no depende del reconocimiento de Google (el P30 Pro es Huawei) y la voz es la misma del orbe de escritorio. Nada de audio sale del PC.
