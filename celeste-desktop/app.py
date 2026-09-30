@@ -10,13 +10,14 @@ from __future__ import annotations
 import os
 import re
 import sys
+import datetime as dt
 import threading
 import unicodedata
 from pathlib import Path
 
 import httpx
-from PySide6.QtCore import QObject, QPoint, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QCursor
+from PySide6.QtCore import QObject, QPoint, QSettings, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QCursor, QDesktopServices
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
 import desktop_pin
@@ -47,11 +48,16 @@ YES = re.compile(r"\b(si|confirmo|confirma|dale|hazlo|claro|de una|adelante)\b")
 NO = re.compile(r"\b(no|cancela|cancelar|olvidalo|dejalo)\b")
 
 
+def _k(tokens: int) -> str:
+    return f"{tokens / 1000:.1f}k" if tokens >= 1000 else str(tokens)
+
+
 class Bus(QObject):
     state = Signal(str)
     caption = Signal(str)
     level = Signal(float)
     speak_done = Signal()
+    badge = Signal(str, bool)  # texto, ¿usó Claude?
 
 
 class CelesteWidget(QWidget):
@@ -93,10 +99,15 @@ class CelesteWidget(QWidget):
             " border-radius: 10px; padding: 6px 10px; font: 10pt 'Segoe UI'; }"
         )
         self.label.hide()
+        # Etiqueta chica bajo el subtítulo: ¿esta respuesta gastó Claude o fue local?
+        self.badge = QLabel(self)
+        self.badge.hide()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.label, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        layout.addSpacing(4)
+        layout.addWidget(self.badge, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         layout.addStretch()
         self.label.setMaximumWidth(310)
 
@@ -104,8 +115,9 @@ class CelesteWidget(QWidget):
         self.bus.caption.connect(self._show_caption)
         self.bus.level.connect(lambda v: setattr(self.orb, "level", v))
         self.bus.speak_done.connect(self._after_speaking)
+        self.bus.badge.connect(self._show_badge)
 
-        self.hide_caption = QTimer(self, singleShot=True, timeout=self.label.hide)
+        self.hide_caption = QTimer(self, singleShot=True, timeout=self._hide_captions)
         self.frame = QTimer(self, interval=16, timeout=self._tick)
         self.frame.start()
 
@@ -160,6 +172,39 @@ class CelesteWidget(QWidget):
         self.label.show()
         self.hide_caption.start(9000 if self.state in ("idle", "error") else 60000)
 
+    def _hide_captions(self) -> None:
+        self.label.hide()
+        self.badge.hide()
+
+    def _show_badge(self, text: str, used_claude: bool) -> None:
+        color = "#c4b5fd" if used_claude else "#86efac"
+        self.badge.setStyleSheet(
+            f"QLabel {{ color: {color}; background: rgba(20, 12, 36, 170); border-radius: 8px;"
+            " padding: 2px 8px; font: 8pt 'Segoe UI'; }"
+        )
+        self.badge.setText(text)
+        self.badge.adjustSize()
+        self.badge.show()
+
+    # ---------- uso ----------
+    @staticmethod
+    def _usage_key(field: str) -> str:
+        return f"usage/{dt.date.today().isoformat()}/{field}"
+
+    def _record_usage(self, used_claude: bool, tokens: int) -> None:
+        settings = QSettings("Celeste", "DesktopWidget")
+        field = "claude" if used_claude else "local"
+        settings.setValue(self._usage_key(field), int(settings.value(self._usage_key(field), 0)) + 1)
+        if used_claude:
+            settings.setValue(self._usage_key("tokens"), int(settings.value(self._usage_key("tokens"), 0)) + tokens)
+
+    def _usage_today(self) -> str:
+        settings = QSettings("Celeste", "DesktopWidget")
+        claude = int(settings.value(self._usage_key("claude"), 0))
+        local = int(settings.value(self._usage_key("local"), 0))
+        tokens = int(settings.value(self._usage_key("tokens"), 0))
+        return f"Hoy: {claude} con Claude ({_k(tokens)} tokens) · {local} locales"
+
     def _tick(self) -> None:
         if self.state == "speaking" and self.tts is not None:
             self.orb.level = self.tts.level()
@@ -194,8 +239,15 @@ class CelesteWidget(QWidget):
     def contextMenuEvent(self, _event) -> None:
         menu = QMenu(self)
         menu.setStyleSheet("QMenu { background: #1e1036; color: #f3e8ff; } QMenu::item:selected { background: #6d28d9; }")
+        usage = QAction(self._usage_today(), self)
+        usage.setEnabled(False)
+        limits = QAction("Ver mis límites de Claude…", self, triggered=lambda: QDesktopServices.openUrl(
+            QUrl("https://claude.ai/settings/usage")))
         reset = QAction("Nueva conversación", self, triggered=self._reset_conversation)
         quit_ = QAction("Salir", self, triggered=QApplication.quit)
+        menu.addAction(usage)
+        menu.addAction(limits)
+        menu.addSeparator()
         menu.addAction(reset)
         menu.addSeparator()
         menu.addAction(quit_)
@@ -212,6 +264,7 @@ class CelesteWidget(QWidget):
             self.tts.stop()
 
     def _listen(self) -> None:
+        self.badge.hide()
         self._set_state("listening")
         self._show_caption("Te escucho…")
         threading.Thread(target=self._pipeline, daemon=True).start()
@@ -256,12 +309,26 @@ class CelesteWidget(QWidget):
         for event in data.get("events") or []:
             if event.get("status") == "confirmation_required" and event.get("confirmation_id"):
                 self.pending_confirmation = event["confirmation_id"]
+        self._report_source(data)
         return str(data.get("reply") or "No obtuve respuesta.")
+
+    def _report_source(self, data: dict) -> None:
+        performance = data.get("performance") or {}
+        rounds = performance.get("claude_rounds") or []
+        if data.get("provider") == "claude" and rounds:
+            tokens = sum(int(r.get("input_tokens", 0)) + int(r.get("output_tokens", 0)) for r in rounds)
+            seconds = float(performance.get("total_ms") or 0) / 1000
+            self._record_usage(True, tokens)
+            self.bus.badge.emit(f"● Claude · {_k(tokens)} tokens · {seconds:.1f} s", True)
+        else:
+            self._record_usage(False, 0)
+            self.bus.badge.emit("● Local · 0 tokens", False)
 
     def _resolve_confirmation(self, text: str) -> str:
         confirmation_id, self.pending_confirmation = self.pending_confirmation, None
         plain = _plain(text)
         try:
+            self.bus.badge.emit("● Local · 0 tokens", False)
             if NO.search(plain):
                 self.http.delete(f"/api/v1/assistant/confirm/{confirmation_id}")
                 return "Cancelado."
