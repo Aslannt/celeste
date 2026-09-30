@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.api.assistant import ToolEventResponse, run_chat
 from app.config import Settings
 from app.security import require_token
-from app.services.voice import VoiceError, VoiceUnavailableError, decode_wav, get_engine
+from app.services.voice import VoiceError, VoiceUnavailableError, decode_wav, get_engine, speakable
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024  # ~5 min of 16 kHz mono PCM
 
@@ -71,7 +71,7 @@ async def assistant_voice(
         reply, provider, events, performance = "No te entendi. Intentalo de nuevo.", "voice", [], {}
     else:
         chat = await run_in_threadpool(run_chat, transcript)
-        reply, provider = chat.reply, chat.provider
+        reply, provider = speakable(chat.reply), chat.provider  # plain text: shown and spoken
         events, performance = chat.events, dict(chat.performance or {})
     performance["stt_ms"] = stt_ms
 

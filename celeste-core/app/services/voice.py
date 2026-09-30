@@ -71,8 +71,9 @@ def decode_wav(data: bytes) -> Any:
 
 
 def speakable(text: str) -> str:
-    """Drop markdown so the voice doesn't read asterisks or hashes."""
-    return _MARKDOWN_RE.sub("", text).strip()
+    """Drop markdown so the voice doesn't read asterisks or hashes, and keep it compact."""
+    text = _MARKDOWN_RE.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 class VoiceEngine:
