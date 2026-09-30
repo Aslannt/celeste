@@ -151,6 +151,9 @@ class CelesteWidget(QWidget):
 
     def _show_caption(self, text: str) -> None:
         self.label.setText(text)
+        # Con word-wrap, adjustSize() encoge la etiqueta y corta el texto: fijar ancho real.
+        width = min(290, self.label.fontMetrics().horizontalAdvance(text) + 30)
+        self.label.setFixedWidth(max(width, 80))
         self.label.adjustSize()
         self.label.show()
         self.hide_caption.start(9000 if self.state in ("idle", "error") else 60000)
@@ -216,7 +219,12 @@ class CelesteWidget(QWidget):
         audio = self.recorder.record()
         if audio is None:
             self.bus.state.emit("idle")
-            self.bus.caption.emit("No te escuché.")
+            if self.recorder.dead_mic:
+                self.bus.state.emit("error")
+                self.bus.caption.emit(f"Tu micrófono no da señal ({self.recorder.device_name}). "
+                                      "Revisa que esté conectado o elige otro con CELESTE_MIC.")
+            else:
+                self.bus.caption.emit("No te escuché.")
             return
         self.bus.state.emit("thinking")
         text = self.stt.transcribe(audio)

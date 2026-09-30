@@ -49,6 +49,8 @@ class Recorder:
         self.max_s = max_s
         self.no_speech_s = no_speech_s
         self._stop = threading.Event()
+        self.dead_mic = False  # True si la última grabación fue silencio absoluto (mic sin señal)
+        self.device_name = sd.query_devices(device if device is not None else sd.default.device[0])["name"]
 
     def stop(self) -> None:
         self._stop.set()
@@ -62,6 +64,7 @@ class Recorder:
             q.put(indata[:, 0].copy())
 
         noise: list[float] = []
+        peak = 0.0
         speech_started = False
         last_voice = started = time.monotonic()
         with sd.InputStream(samplerate=SAMPLE_RATE, blocksize=BLOCK, channels=1, dtype="float32",
@@ -72,6 +75,7 @@ class Recorder:
                 except queue.Empty:
                     continue
                 chunks.append(block)
+                peak = max(peak, float(np.abs(block).max()))
                 rms = float(np.sqrt(np.mean(block * block)) + 1e-9)
                 now = time.monotonic()
                 if len(noise) < 10:  # primeros 300 ms: piso de ruido
@@ -84,10 +88,13 @@ class Recorder:
                 if speech_started and now - last_voice > self.silence_s:
                     break
                 if not speech_started and now - started > self.no_speech_s:
+                    self.dead_mic = peak < 1e-4
+                    self.on_level(0.0)
                     return None
                 if now - started > self.max_s:
                     break
         self.on_level(0.0)
+        self.dead_mic = False
         if not speech_started:
             return None
         return np.concatenate(chunks)
