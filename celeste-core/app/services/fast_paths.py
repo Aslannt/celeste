@@ -238,7 +238,7 @@ def try_ollama_fast_path(
     user confirmation boundary.
     """
 
-    if settings.llm_provider != "ollama":
+    if settings.llm_provider not in {"ollama", "claude"}:
         return None
 
     started = time.perf_counter()
