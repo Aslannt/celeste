@@ -52,6 +52,16 @@ def _k(tokens: int) -> str:
     return f"{tokens / 1000:.1f}k" if tokens >= 1000 else str(tokens)
 
 
+def _notice_text(notice: dict) -> str:
+    title = str(notice.get("title") or "").strip()
+    detail = str(notice.get("detail") or "").strip()
+    if notice.get("source") == "reminder":
+        if detail and detail != "Recordatorio de Celeste":
+            return f"Recordatorio: {title}. {detail}."
+        return f"Recordatorio: {title}."
+    return f"{title}. {detail}".strip()
+
+
 class Bus(QObject):
     state = Signal(str)
     caption = Signal(str)
@@ -132,6 +142,10 @@ class CelesteWidget(QWidget):
         self.setToolTip("Celeste · clic para hablar · clic derecho para opciones")
         # Revisa cada 2 s que siga anclada (p. ej. si Explorer se reinició).
         self.pin_guard = QTimer(self, interval=2000, timeout=lambda: desktop_pin.keep_pinned(int(self.winId())))
+        # Avisos proactivos: recordatorios vencidos (y otros avisos del Core) se leen solos.
+        self._announcing = False
+        self.notice_timer = QTimer(self, interval=20000, timeout=self._poll_notices)
+        self.notice_timer.start()
         threading.Thread(target=self._load_models, daemon=True).start()
 
     def showEvent(self, event) -> None:
@@ -357,6 +371,37 @@ class CelesteWidget(QWidget):
         else:
             self._set_state("idle")
             self.hide_caption.start(9000)
+
+    # ---------- avisos ----------
+    def _poll_notices(self) -> None:
+        if self.state != "idle" or self._announcing or self.tts is None:
+            return
+        self._announcing = True
+        threading.Thread(target=self._announce_notices, daemon=True).start()
+
+    def _announce_notices(self) -> None:
+        try:
+            response = self.http.get("/api/v1/notifications", params={"include_seen": "false", "limit": 10})
+            notices = response.json() if response.status_code == 200 else []
+        except Exception:  # noqa: BLE001 - Core apagado: se reintenta en el próximo ciclo
+            notices = []
+        if not notices or self.state != "idle":
+            self._announcing = False
+            return
+        parts = [_notice_text(n) for n in notices[:3]]
+        if len(notices) > 3:
+            parts.append(f"Y tienes {len(notices) - 3} avisos más.")
+        text = " ".join(parts)
+        assert self.tts
+        self.tts.chime()
+        self.bus.badge.emit("● Aviso · local", False)
+        self._say(text)
+        for notice in notices:
+            try:
+                self.http.post(f"/api/v1/notifications/{notice['id']}/seen")
+            except Exception:  # noqa: BLE001
+                pass
+        self._announcing = False
 
     def _reset_conversation(self) -> None:
         try:

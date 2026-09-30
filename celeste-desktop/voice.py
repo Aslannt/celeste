@@ -151,6 +151,15 @@ class TextToSpeech:
         self._started = time.monotonic()
         self._playing_until = self._started + len(audio) / self.rate
 
+    def chime(self) -> None:
+        """Dos notas suaves antes de un aviso, para que no arranque a hablar de golpe."""
+        t = np.linspace(0, 0.18, int(self.rate * 0.18), endpoint=False)
+        fade = np.minimum(1, np.linspace(6, 0, len(t)))
+        notes = [np.sin(2 * np.pi * f * t) * fade * 0.18 for f in (880, 1318.5)]
+        tone = np.concatenate([np.zeros(int(self.rate * 0.3)), notes[0], notes[1]]).astype(np.float32)
+        sd.play(tone, self.rate)
+        sd.wait()
+
     def is_playing(self) -> bool:
         return time.monotonic() < self._playing_until
 
