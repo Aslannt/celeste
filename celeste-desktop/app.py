@@ -19,6 +19,7 @@ from PySide6.QtCore import QObject, QPoint, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QVBoxLayout, QWidget
 
+import desktop_pin
 from orb import Orb
 from voice import Recorder, SpeechToText, TextToSpeech, find_input_device
 
@@ -72,10 +73,14 @@ class CelesteWidget(QWidget):
         self._press: QPoint | None = None
         self._dragged = False
 
+        # Widget de escritorio: sin "siempre visible"; desktop_pin lo ancla al escritorio.
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Tool
+            | Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(300, 330)
 
         self.orb = Orb(self)
@@ -113,7 +118,15 @@ class CelesteWidget(QWidget):
             self.move(screen.right() - self.width() - 20, screen.bottom() - self.height() - 20)
 
         self.setToolTip("Celeste · clic para hablar · clic derecho para opciones")
+        # Revisa cada 2 s que siga anclada (p. ej. si Explorer se reinició).
+        self.pin_guard = QTimer(self, interval=2000, timeout=lambda: desktop_pin.keep_pinned(int(self.winId())))
         threading.Thread(target=self._load_models, daemon=True).start()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Qt fija el dueño de la ventana al terminar de mostrarla; anclar justo después.
+        QTimer.singleShot(150, lambda: desktop_pin.pin(int(self.winId())))
+        self.pin_guard.start()
 
     # ---------- carga ----------
     def _load_models(self) -> None:
@@ -166,6 +179,7 @@ class CelesteWidget(QWidget):
     def mouseReleaseEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
+        desktop_pin.to_bottom(int(self.winId()))
         if self._dragged:
             QSettings("Celeste", "DesktopWidget").setValue("pos", self.pos())
         else:
@@ -181,6 +195,7 @@ class CelesteWidget(QWidget):
         menu.addSeparator()
         menu.addAction(quit_)
         menu.exec(QCursor.pos())
+        desktop_pin.to_bottom(int(self.winId()))
 
     # ---------- flujo ----------
     def on_click(self) -> None:

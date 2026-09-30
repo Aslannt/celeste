@@ -1,6 +1,9 @@
 # celeste-desktop
 
-Orbe flotante de Celeste para el escritorio de Windows. Un clic y hablas.
+Orbe de Celeste anclado al escritorio de Windows. Un clic y hablas.
+
+Vive en el escritorio, como un widget de Rainmeter: queda debajo de todas las ventanas (solo se ve
+cuando el escritorio está a la vista), Win + D no lo esconde y hacerle clic no le roba el foco a nada.
 
 - **Clic**: empieza a escuchar; corta solo cuando dejas de hablar (~1 s de silencio).
 - **Clic mientras escucha**: corta ya. **Clic mientras habla**: la calla.
