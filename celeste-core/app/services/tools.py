@@ -22,6 +22,7 @@ from app.services.gmail import GmailClient
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.reminders import ReminderStore
 from app.services.storage import MarkdownNoteStorage, NoteNotFoundError
+from app.services.vault import VaultIndex
 from app.services.web_search import SearxngClient, build_web_search_client
 
 
@@ -159,6 +160,23 @@ class ConfirmationStore:
 _CONFIRMATIONS = ConfirmationStore()
 
 
+def build_vault_index(settings: Settings) -> VaultIndex | None:
+    """Read-only index over the whole vault (ADR-014); None when not configured."""
+    if settings.vault_dir is None:
+        return None
+    try:
+        brain_relative = settings.brain_dir.resolve().relative_to(settings.vault_dir.resolve()).as_posix()
+    except ValueError:
+        brain_relative = ""
+    excluded = tuple(settings.vault_exclude) + ((brain_relative,) if brain_relative else ())
+    return VaultIndex(
+        settings.vault_dir,
+        settings.brain_dir / ".celeste",
+        excluded=excluded,
+        embedder=build_embedding_client(settings),
+    )
+
+
 class ToolRouter:
     """Security boundary between AI providers and Celeste capabilities.
 
@@ -176,6 +194,7 @@ class ToolRouter:
         self.gmail: GmailClient | None = None
         self.calendar: CalendarClient | None = None
         self.web_search: SearxngClient | None = build_web_search_client(settings)
+        self.vault: VaultIndex | None = build_vault_index(settings)
         self._tools: dict[str, ToolSpec] = {}
         self._register_builtin_tools()
         self._register_reminder_tools()
@@ -193,6 +212,8 @@ class ToolRouter:
             self._register_calendar_tools()
         if self.web_search is not None:
             self._register_web_search_tools()
+        if self.vault is not None:
+            self._register_vault_tools()
 
     def _register_builtin_tools(self) -> None:
         self.register(
@@ -682,6 +703,36 @@ class ToolRouter:
             )
         )
 
+    def _register_vault_tools(self) -> None:
+        self.register(
+            ToolSpec(
+                name="search_vault",
+                description=(
+                    "Search the user's whole Obsidian vault (read-only): the notes Deivid keeps "
+                    "about his life, family, health, work, study, vehicles, home and projects. "
+                    "Use it FIRST for any question about the user or his things. Returns the "
+                    "matching sections with the note path. If nothing relevant comes back and "
+                    "the question is about the outside world, use web_search next."
+                ),
+                risk=ToolRisk.READ,
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Words or question to look for."},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum sections to return, from 1 to 8.",
+                            "minimum": 1,
+                            "maximum": 8,
+                        },
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+                handler=self._search_vault,
+            )
+        )
+
     def register(self, spec: ToolSpec) -> None:
         if spec.name in self._tools:
             raise ValueError(f"Tool already registered: {spec.name}")
@@ -855,6 +906,15 @@ class ToolRouter:
                 }
             )
         return results
+
+    def _search_vault(self, arguments: dict[str, Any]) -> list[dict[str, str]]:
+        query = str(arguments.get("query", "")).strip()
+        if not query:
+            raise ValueError("query is required")
+        if self.vault is None:
+            raise ValueError("Vault search is disabled")
+        limit = max(1, min(int(arguments.get("limit", 4)), 8))
+        return self.vault.search(query, limit=limit)
 
     def _web_search(self, arguments: dict[str, Any]) -> list[dict[str, str]]:
         query = str(arguments.get("query", "")).strip()

@@ -23,6 +23,7 @@ from app.services.gmail_monitor import GmailMonitor
 from app.services.index import BrainIndex, BrainIndexError
 from app.services.notifications import NotificationStoreError
 from app.services.reminder_monitor import ReminderMonitor
+from app.services.tools import build_vault_index
 from app.services.reminders import ReminderError
 from app.services.storage import MarkdownNoteStorage
 
@@ -61,12 +62,30 @@ async def _reminder_monitor_loop(settings: Settings) -> None:
         await asyncio.sleep(settings.reminder_poll_seconds)
 
 
+async def _vault_index_loop(settings: Settings) -> None:
+    """Keep the read-only vault index warm (ADR-014): new/changed notes get their
+    keyword index and embeddings in the background, never during an answer."""
+    vault = build_vault_index(settings)
+    if vault is None:
+        return
+    while True:
+        try:
+            touched = await asyncio.to_thread(vault.refresh)
+            embedded = await asyncio.to_thread(vault.sync_embeddings)
+            if touched or embedded:
+                print(f"[Celeste] Vault index: {touched} file(s) refreshed, {embedded} section(s) embedded.")
+        except Exception as exc:  # noqa: BLE001 - the vault index is optional
+            print(f"[Celeste] WARNING: vault index loop failed: {exc}")
+        await asyncio.sleep(600)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = Settings.from_env()
     storage = MarkdownNoteStorage(settings.brain_dir)
     gmail_monitor_task: asyncio.Task[None] | None = None
     reminder_monitor_task: asyncio.Task[None] | None = None
+    vault_index_task: asyncio.Task[None] | None = None
 
     try:
         embedder = build_embedding_client(settings)
@@ -114,6 +133,9 @@ async def lifespan(_: FastAPI):
             print("[Celeste] Calendar needs local OAuth authorization before calendar tools can run.")
 
     reminder_monitor_task = asyncio.create_task(_reminder_monitor_loop(settings))
+    if settings.vault_dir is not None:
+        vault_index_task = asyncio.create_task(_vault_index_loop(settings))
+        print(f"[Celeste] Vault (solo lectura): {settings.vault_dir}")
     print(f"[Celeste] Local reminder monitor every {settings.reminder_poll_seconds}s.")
 
     if settings.api_token == "celeste-local-dev":
@@ -122,7 +144,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        for task in (gmail_monitor_task, reminder_monitor_task):
+        for task in (gmail_monitor_task, reminder_monitor_task, vault_index_task):
             if task is not None:
                 task.cancel()
                 with suppress(asyncio.CancelledError):

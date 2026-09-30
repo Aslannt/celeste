@@ -44,6 +44,13 @@ class Settings:
     code_task_image: str
     code_task_timeout_seconds: int
     version: str = "0.4.2"
+    # ADR-014: read-only access to the whole Obsidian vault (None = disabled).
+    vault_dir: Path | None = None
+    vault_exclude: tuple[str, ...] = ()
+    # Voice endpoint (Whisper + Piper on this PC) for the Android app.
+    voice_enabled: bool = False
+    voice_whisper_model: str = "large-v3-turbo"
+    voice_piper_model: Path | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -186,6 +193,11 @@ class Settings:
             ollama_url=ollama_url,
             ollama_think=ollama_think,
             claude_bin=os.getenv("CELESTE_CLAUDE_BIN", "").strip() or None,
+            vault_dir=Path(os.environ["CELESTE_VAULT_DIR"]).expanduser() if os.getenv("CELESTE_VAULT_DIR", "").strip() else None,
+            vault_exclude=tuple(p for p in os.getenv("CELESTE_VAULT_EXCLUDE", "").split(",") if p.strip()),
+            voice_enabled=_env_bool("CELESTE_VOICE_ENABLED", False),
+            voice_whisper_model=os.getenv("CELESTE_VOICE_WHISPER_MODEL", "large-v3-turbo").strip() or "large-v3-turbo",
+            voice_piper_model=Path(os.environ["CELESTE_VOICE_PIPER_MODEL"]).expanduser() if os.getenv("CELESTE_VOICE_PIPER_MODEL", "").strip() else None,
             gmail_enabled=gmail_enabled,
             gmail_credentials_file=gmail_credentials_file,
             gmail_token_file=gmail_token_file,
