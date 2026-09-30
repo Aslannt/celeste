@@ -824,10 +824,16 @@ _CLAUDE_TOOL_BLOCK = re.compile(r"<tool>\s*(\{.*?\})\s*</tool>", re.DOTALL)
 
 _CLAUDE_NEED_TOOLS = "<need_tools/>"
 _CLAUDE_NEED_TOOLS_RULE = (
-    "Celeste Core does have tools (notes, memory, reminders, calendar, email, web search, PC status), "
-    "they are just hidden in this turn to save tokens. If answering well needs any of them "
-    "(saving or remembering something, scheduling or reminding, checking the user's notes, agenda, "
-    f"email, current news), reply with exactly {_CLAUDE_NEED_TOOLS} and nothing else.\n"
+    "Celeste Core DOES have tools (the user's Obsidian notes and Celeste memory, reminders, "
+    "calendar, email, web search, PC status); they are only hidden in this turn to save tokens. "
+    f"Reply with exactly {_CLAUDE_NEED_TOOLS} and nothing else when the message: asks anything "
+    "about the user himself, his family, partner, pregnancy, health, gym routine, work, study, "
+    "money, home, vehicles, plans or anything he may have written down; asks to save, remember, "
+    "note, schedule or remind; or needs current information (news, sports results, prices, "
+    "weather, anything after your training). Answer directly ONLY for small talk, jokes, or "
+    "general knowledge that does not depend on the user or on recent events. Never say you "
+    "lack access to notes or tools, and never ask whether you should look something up: just "
+    f"reply {_CLAUDE_NEED_TOOLS}.\n"
 )
 
 _CLAUDE_VOICE_STYLE = (
@@ -977,9 +983,13 @@ class ClaudeCLIProvider:
     def _system_prompt(schemas: list[dict[str, Any]]) -> str:
         now = _local_now_label()
         if not schemas:
+            # Own base prompt: the shared conversation instructions say "no tools are
+            # available", which contradicts the <need_tools/> escape hatch.
             return (
-                f"{_CELESTE_CONVERSATION_INSTRUCTIONS}{_CLAUDE_VOICE_STYLE}"
-                f"{_CLAUDE_NEED_TOOLS_RULE}"
+                "You are Celeste, Deivid's private personal assistant. Answer in Spanish unless "
+                "the user clearly uses another language. Never claim that you saved, scheduled or "
+                "executed anything in this turn.\n"
+                f"{_CLAUDE_VOICE_STYLE}{_CLAUDE_NEED_TOOLS_RULE}"
                 f"Current local time: {now}."
             )
         compact = json.dumps(
